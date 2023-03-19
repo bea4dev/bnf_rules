@@ -1,0 +1,9 @@
+[package]
+name = "bnf_rules"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bnf_rules_macro = { path = "bnf_rules_macro" }
+bnf_rules_parser = { path = "bnf_rules_parser" }
+regex = "1.7.1"
