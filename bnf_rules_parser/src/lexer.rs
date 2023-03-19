@@ -1,7 +1,6 @@
 use std::cmp::min;
 use std::rc::Rc;
 use either::Either;
-use fixedbitset::FixedBitSet;
 use regex::{Error, Regex};
 
 
@@ -35,150 +34,194 @@ impl Lexer {
         let source_length = source.len();
 
         let mut tokens = Vec::<Token>::new();
-        let mut word_buffer = String::new();
-        let mut word_buffer_start_position = 0;
+        let mut source_index = 0;
 
-        let terminal_symbol_length = self.terminal_symbols.len();
-        let mut enabled_symbol_flags = FixedBitSet::with_capacity(terminal_symbol_length);
-        for i in 0..terminal_symbol_length {
-            enabled_symbol_flags.set(i, true);
-        }
-
-        for source_index in 0..source_length {
-            let char = source[source_index];
-            word_buffer.push(char);
-
-            for i in 0..terminal_symbol_length {
-
-                if enabled_symbol_flags[i] {
-
-                    let terminal_symbol = &self.terminal_symbols[i];
-
-                    if !terminal_symbol.is_match(word_buffer.as_str()) {
-                        enabled_symbol_flags.set(i, false);
-
-                        if enabled_symbol_flags.is_clear() {
-                            let last_char = word_buffer.pop();
-
-                            let word_buffer_str = word_buffer.as_str();
-
-                            let mut terminal_symbol = terminal_symbol;
-                            if !terminal_symbol.is_match_strict(word_buffer_str) {
-                                for symbol in self.terminal_symbols.iter() {
-                                    if symbol.is_match_strict(word_buffer_str) {
-                                        terminal_symbol = symbol;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            let word_length = source_index - word_buffer_start_position;
-
-                            if word_length == 0 {
-                                let position = TokenPosition::new(word_buffer_start_position, 1, 0, 0);
-                                return Err(UnexpectedToken {
-                                    position,
-                                    text: last_char.unwrap().to_string()
-                                });
-                            } else if !terminal_symbol.is_match(word_buffer_str) {
-                                let position = TokenPosition::new(word_buffer_start_position, word_length, 0, 0);
-                                return Err(UnexpectedToken {
-                                    position,
-                                    text: word_buffer.clone()
-                                });
-                            }
-
-                            if terminal_symbol.symbol_id != usize::MAX {
-                                let position = TokenPosition::new(word_buffer_start_position, word_length, 0, 0);
-                                let token = Token::new(
-                                    position,
-                                    word_buffer.clone(),
-                                    terminal_symbol.clone(), terminal_symbol.symbol_id);
-
-                                tokens.push(token);
-                            }
-
-
-                            word_buffer = String::new();
-                            match last_char { Some(char) => word_buffer.push(char), _ => {} }
-
-                            word_buffer_start_position = source_index;
-
-
-
-                            let mut found = false;
-                            for i in 0..terminal_symbol_length {
-
-                                let symbol = &self.terminal_symbols[i];
-
-                                if symbol.is_match(word_buffer.as_str()) {
-                                    enabled_symbol_flags.set(i, true);
-                                    found = true;
-                                }
-
-                            }
-
-                            if !found {
-                                let position = TokenPosition::new(word_buffer_start_position, word_length, 0, 0);
-                                return Err(UnexpectedToken {
-                                    position,
-                                    text: word_buffer.clone()
-                                });
-                            }
-                        }
-                    }
-
-                }
-
+        loop {
+            let token = self.read_until_find_token(&source, &mut source_index)?;
+            if token.symbol_id != usize::MAX {
+                tokens.push(token);
             }
 
-
-            if source_index + 1 == source_length {
-
-                let word_length = word_buffer.chars().count();
-                let eof_symbol = &self.eof_symbol;
-
-                if word_length == 0 {
-                    let position = TokenPosition::new(source_index, 0, 0, 0);
-                    tokens.push(Token::new_eof(position, eof_symbol.clone()));
-                } else {
-                    let mut last_matched_symbol = eof_symbol;
-                    let mut found = false;
-
-                    for i in 0..terminal_symbol_length {
-                        if enabled_symbol_flags[i] {
-
-                            let terminal_symbol = &self.terminal_symbols[i];
-
-                            if terminal_symbol.is_match(word_buffer.as_str()) {
-                                last_matched_symbol = &self.terminal_symbols[i];
-                                found = true;
-                            }
-                        }
-                    }
-
-                    if found {
-                        if last_matched_symbol.symbol_id != usize::MAX {
-                            let position = TokenPosition::new(word_buffer_start_position, word_length, 0, 0);
-                            tokens.push(Token::new(position, word_buffer.clone(), last_matched_symbol.clone(), last_matched_symbol.symbol_id));
-                        }
-                    } else {
-                        let position = TokenPosition::new(word_buffer_start_position, word_length, 0, 0);
-                        return Err(UnexpectedToken {
-                            position,
-                            text: word_buffer.clone()
-                        });
-                    }
-
-                    let position = TokenPosition::new(source_index, 0, 0, 0);
-                    tokens.push(Token::new_eof(position, eof_symbol.clone()));
-                }
-
+            if source_index == source.len() {
+                break;
             }
-
         }
+
+        let eof_position = TokenPosition::new(source_length - 1, 0, 0, 0);
+        tokens.push(Token::new_eof(eof_position, self.eof_symbol.clone()));
 
         return Ok(tokens);
+    }
+
+    pub fn read_until_find_token(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, UnexpectedToken> {
+
+        let start_position = *source_index;
+
+        let mut string_symbol_token = Option::<Token>::None;
+        let mut regex_symbol_token = Option::<Token>::None;
+        let mut i = start_position;
+        let mut word_buffer = String::new();
+        let mut phase = 0;
+
+        'all : loop {
+            let char = source[i];
+            word_buffer.push(char);
+
+            let word_length = i - start_position + 1;
+
+            let mut is_matched = false;
+            for terminal_symbol in self.terminal_symbols.iter() {
+                if phase == 0 {
+                    if terminal_symbol.judgement.is_left() {
+                        continue;
+                    }
+                } else {
+                    if terminal_symbol.judgement.is_right() {
+                        continue;
+                    }
+                }
+
+                if terminal_symbol.is_match(word_buffer.as_str()) {
+                    is_matched = true;
+                    break;
+                }
+            }
+
+            if !is_matched || i + 1 == source.len() {
+                if word_length == 1 && !is_matched {
+
+                    if phase == 0 {
+                        i = start_position;
+                        word_buffer = String::new();
+                        phase = 1;
+                        continue;
+                    } else {
+                        i = start_position;
+                        word_buffer = String::new();
+
+                        loop {
+                            let char = source[i];
+                            word_buffer.push(char);
+
+                            let word_length = i - start_position + 1;
+
+                            let mut matched_symbol = Option::<Rc<TerminalSymbol>>::None;
+
+                            for terminal_symbol in self.terminal_symbols.iter() {
+                                if terminal_symbol.judgement.is_right() {
+                                    continue;
+                                }
+
+                                if terminal_symbol.is_match_strict(word_buffer.as_str()) {
+                                    matched_symbol = Some(terminal_symbol.clone());
+                                }
+                            }
+
+                            match matched_symbol {
+                                Some(symbol) => {
+                                    let position = TokenPosition::new(start_position, word_length, 0, 0);
+                                    regex_symbol_token = Some(Token::new(position, word_buffer.clone(), symbol.clone(), symbol.symbol_id));
+                                    break 'all;
+                                },
+                                _ => {}
+                            }
+
+                            if i + 1 == source.len() {
+                                break 'all;
+                            }
+
+                            i += 1;
+                        }
+
+                    }
+
+                }
+
+                let mut word_length = word_length;
+
+                if !is_matched {
+                    word_buffer.pop();
+                    word_length -= 1;
+                }
+
+                let mut matched_symbol = Option::<Rc<TerminalSymbol>>::None;
+
+                for terminal_symbol in self.terminal_symbols.iter() {
+                    if phase == 0 {
+                        if terminal_symbol.judgement.is_left() {
+                            continue;
+                        }
+                    } else {
+                        if terminal_symbol.judgement.is_right() {
+                            continue;
+                        }
+                    }
+
+                    if terminal_symbol.is_match_strict(word_buffer.as_str()) {
+                        matched_symbol = Some(terminal_symbol.clone());
+                    }
+                }
+
+                match matched_symbol {
+                    Some(symbol) => {
+                        let position = TokenPosition::new(start_position, word_length, 0, 0);
+                        if phase == 0 {
+                            string_symbol_token = Some(Token::new(position, word_buffer.clone(), symbol.clone(), symbol.symbol_id));
+                        } else {
+                            regex_symbol_token = Some(Token::new(position, word_buffer.clone(), symbol.clone(), symbol.symbol_id));
+                        }
+                    },
+                    _ => {}
+                }
+
+                if phase == 0 {
+                    if string_symbol_token.is_some() {
+                        break;
+                    }
+                    i = start_position;
+                    word_buffer = String::new();
+                    phase = 1;
+                    continue;
+                } else {
+                    break;
+                }
+            }
+
+            i += 1;
+        }
+
+
+        return match string_symbol_token {
+            Some(string_token) => {
+                match regex_symbol_token {
+                    Some(regex_token) => {
+                        if string_token.position.text_length >= regex_token.position.text_length {
+                            *source_index = start_position + string_token.position.text_length;
+                            Ok(string_token)
+                        } else {
+                            *source_index = start_position + regex_token.position.text_length;
+                            Ok(regex_token)
+                        }
+                    },
+                    _ => {
+                        *source_index = start_position + string_token.position.text_length;
+                        Ok(string_token)
+                    }
+                }
+            },
+            _ => {
+                match regex_symbol_token {
+                    Some(regex_token) => {
+                        *source_index = start_position + regex_token.position.text_length;
+                        Ok(regex_token)
+                    },
+                    _ => {
+                        let position = TokenPosition::new(start_position, 1, 0, 0);
+                        Err(UnexpectedToken { position, text: source[start_position].to_string() })
+                    }
+                }
+            }
+        };
     }
 
 }
@@ -231,24 +274,6 @@ impl TerminalSymbol {
             Either::Left(regex) => regex.is_match(target_str),
             Either::Right(judge_string) => target_str == judge_string
         };
-    }
-
-}
-
-
-
-#[derive(Debug)]
-pub struct NonterminalSymbol {
-    name: String
-}
-
-
-impl NonterminalSymbol {
-
-    pub fn new(name: String) -> Self {
-        return Self {
-            name
-        }
     }
 
 }
