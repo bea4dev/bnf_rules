@@ -26,8 +26,12 @@ pub fn parse() {
     dbg!(ast_node.unwrap());
 
 }
+```
 
 
+### Usage
+```toml
+bnf_rules = { git = "https://github.com/bea4dev/bnf_rules" }
 ```
 
 
