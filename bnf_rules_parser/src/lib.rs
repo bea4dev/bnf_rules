@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
 use litrs::StringLit;
-use quote::__private::{Delimiter, Group, Literal, Punct, TokenTree};
+use proc_macro2::{Delimiter, Group, Literal, Punct, TokenTree};
 use syn::{Error, Ident};
 use syn::parse::{Parse, ParseStream};
 
