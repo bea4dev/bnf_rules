@@ -10,7 +10,7 @@ mod tests {
     use bnf_rules_parser::parser::{*};
 
     bnf_rules!(
-        source   ::= expr
+        source   ::= [ expr ]
         expr     ::= factor { "+" factor }
         factor   ::= "-" primary | primary
         primary  ::= "(" expr ")" | number

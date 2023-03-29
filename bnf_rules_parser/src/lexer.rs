@@ -33,6 +33,11 @@ impl Lexer {
         let source = source.chars().collect::<Vec<char>>();
         let source_length = source.len();
 
+        if source_length == 0 {
+            let position = TokenPosition::new(0, 0, 0, 0);
+            return Ok(vec![Token::new_eof(position, self.eof_symbol.clone())]);
+        }
+
         let mut tokens = Vec::<Token>::new();
         let mut source_index = 0;
 
