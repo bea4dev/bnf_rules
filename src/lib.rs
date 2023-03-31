@@ -20,7 +20,7 @@ mod tests {
 
     #[test]
     pub fn test() {
-        let node = parse_source(r#"10 + 100 + (200 + -10)"#).unwrap();
+        let node = parse_source("10 + 100 + (200 + -10)").unwrap();
         dbg!(node);
     }
 

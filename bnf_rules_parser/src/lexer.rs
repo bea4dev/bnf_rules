@@ -1,4 +1,5 @@
 use std::cmp::min;
+use std::collections::HashMap;
 use std::rc::Rc;
 use either::Either;
 use regex::{Error, Regex};
@@ -15,7 +16,7 @@ pub struct Lexer {
 impl Lexer {
 
     pub fn new(mut terminal_symbols: Vec<TerminalSymbol>) -> Self {
-        terminal_symbols.push(TerminalSymbol::new_from_regex(r"\s+", usize::MAX).unwrap());
+        terminal_symbols.push(TerminalSymbol::new_from_regex(r"(\t|[ 　])+", usize::MAX).unwrap());
 
         let mut symbols = Vec::new();
         for symbol in terminal_symbols {
@@ -34,15 +35,17 @@ impl Lexer {
         let source_length = source.len();
 
         if source_length == 0 {
-            let position = TokenPosition::new(0, 0, 0, 0);
+            let position = TokenPosition::new(0, 0, 1, 1);
             return Ok(vec![Token::new_eof(position, self.eof_symbol.clone())]);
         }
 
         let mut tokens = Vec::<Token>::new();
         let mut source_index = 0;
+        let mut current_line = 1;
+        let mut current_column = 1;
 
         loop {
-            let token = self.read_until_find_token(&source, &mut source_index)?;
+            let token = self.read_until_token_found(&source, &mut source_index)?;
             if token.symbol_id != usize::MAX {
                 tokens.push(token);
             }
@@ -55,10 +58,12 @@ impl Lexer {
         let eof_position = TokenPosition::new(source_length - 1, 0, 0, 0);
         tokens.push(Token::new_eof(eof_position, self.eof_symbol.clone()));
 
+        Lexer::set_line_and_column_info(&source, &mut tokens);
+
         return Ok(tokens);
     }
 
-    pub fn read_until_find_token(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, UnexpectedToken> {
+    pub fn read_until_token_found(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, UnexpectedToken> {
 
         let start_position = *source_index;
 
@@ -227,6 +232,60 @@ impl Lexer {
                 }
             }
         };
+    }
+
+
+    pub fn set_line_and_column_info(source: &Vec<char>, tokens: &mut Vec<Token>) {
+        let mut i = 0;
+        let mut line = 1;
+        let mut column = 1;
+
+        let mut position_map = HashMap::<usize, Vec<&mut TokenPosition>>::new();
+        for token in tokens.iter_mut() {
+            let positions = position_map.entry(token.position.start_position).or_insert_with(|| vec![]);
+            positions.push(&mut token.position);
+        }
+
+        loop {
+            let char = source[i];
+
+            if char != '\n' {
+                match Lexer::read_back(source, i, 1) {
+                    Some(char) => {
+                        if char == '\n' || char == '\r' {
+                            line += 1;
+                            column = 1;
+                        }
+                    },
+                    _ => {}
+                }
+            }
+
+            match position_map.get_mut(&i) {
+                Some(positions) => {
+                    for position in positions.iter_mut() {
+                        position.line = line;
+                        position.column = column;
+                    }
+                },
+                _ => {}
+            }
+
+            i += 1;
+            column += 1;
+
+            if i == source.len() {
+                break
+            }
+        }
+    }
+
+
+    fn read_back(source: &Vec<char>, position: usize, back: usize) -> Option<char> {
+        if position < back {
+            return None;
+        }
+        return source.get(position - back).copied();
     }
 
 }
