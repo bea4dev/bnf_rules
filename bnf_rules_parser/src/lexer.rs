@@ -246,20 +246,10 @@ impl Lexer {
             positions.push(&mut token.position);
         }
 
+        let mut previous_column = column;
+
         loop {
             let char = source[i];
-
-            if char != '\n' {
-                match Lexer::read_back(source, i, 1) {
-                    Some(char) => {
-                        if char == '\n' || char == '\r' {
-                            line += 1;
-                            column = 1;
-                        }
-                    },
-                    _ => {}
-                }
-            }
 
             match position_map.get_mut(&i) {
                 Some(positions) => {
@@ -269,6 +259,36 @@ impl Lexer {
                     }
                 },
                 _ => {}
+            }
+
+            let line_feed = if char == '\n' {
+                match Lexer::read_back(source, i, 1) {
+                    Some(previous_char) => {
+                        if previous_char == '\r' {
+                            //for CRLF
+                            column = previous_column;
+                            false
+                        } else {
+                            //for LF
+                            true
+                        }
+                    },
+                    _ => {
+                        //for LF
+                        true
+                    }
+                }
+            } else if char == '\r' {
+                //for CR
+                true
+            } else {
+                false
+            };
+
+            if line_feed {
+                previous_column = column;
+                line += 1;
+                column = 0;
             }
 
             i += 1;
