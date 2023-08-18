@@ -19,6 +19,7 @@ pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, 
     let mut token = &tokens[0];
 
     let mut nondeplicate_number = NondeplicateNumber::new();
+    let mut unnamed_pattern_map = HashMap::new();
 
     loop {
         buffered_tokens.push(token.clone());
@@ -41,7 +42,7 @@ pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, 
                 Ok(_) => {
                     buffered_tokens.pop();
 
-                    parse_rule(&mut rule_map, nonterminal_symbol_name, &buffered_tokens, &mut nondeplicate_number)?;
+                    parse_rule(&mut rule_map, &mut nonterminal_symbol_name, &buffered_tokens, &mut nondeplicate_number, &mut unnamed_pattern_map)?;
 
                     buffered_tokens.clear();
 
@@ -64,7 +65,7 @@ pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, 
 
         if i + 1 == tokens.len() {
             buffered_tokens.push(token.clone());
-            parse_rule(&mut rule_map, nonterminal_symbol_name, &buffered_tokens, &mut nondeplicate_number)?;
+            parse_rule(&mut rule_map, &mut nonterminal_symbol_name, &buffered_tokens, &mut nondeplicate_number, &mut unnamed_pattern_map)?;
             break;
         }
     }
@@ -100,7 +101,7 @@ fn next<'a>(tokens: &'a Vec<TokenTree>, i: &mut usize) -> Result<&'a TokenTree, 
 
 
 
-fn parse_rule(rule_map: &mut HashMap<String, BNFRule>, nonterminal_symbol_name: String, tokens: &Vec<TokenTree>, nondeplicate_number: &mut NondeplicateNumber) -> Result<(), Error> {
+fn parse_rule(rule_map: &mut HashMap<String, BNFRule>, nonterminal_symbol_name: &mut String, tokens: &Vec<TokenTree>, nondeplicate_number: &mut NondeplicateNumber, unnamed_pattern_map: &mut HashMap<Vec<Vec<BNFSymbol>>, String>) -> Result<(), Error> {
 
     let mut rule = BNFRule::new(nonterminal_symbol_name.clone());
 
@@ -129,31 +130,29 @@ fn parse_rule(rule_map: &mut HashMap<String, BNFRule>, nonterminal_symbol_name: 
             TokenTree::Group(group) => {
                 let delimiter = group.delimiter();
                 let symbols = group.stream().into_iter().collect::<Vec<TokenTree>>();
-                let new_symbol_name = nondeplicate_number.as_symbol_name();
-
-                pattern.push(BNFSymbol::NonterminalSymbolName(new_symbol_name.clone()));
+                let mut new_symbol_name = nondeplicate_number.as_symbol_name();
 
                 match delimiter {
                     Delimiter::Parenthesis => {
-                        parse_rule(rule_map, new_symbol_name, &symbols, nondeplicate_number)?;
+                        parse_rule(rule_map, &mut new_symbol_name, &symbols, nondeplicate_number, unnamed_pattern_map)?;
                     },
                     Delimiter::Brace => { // new_symbol ::= null | new_pattern new_symbol
-                        let new_pattern_name = nondeplicate_number.as_symbol_name();
-                        parse_rule(rule_map, new_pattern_name.clone(), &symbols, nondeplicate_number)?;
+                        let mut new_pattern_name = nondeplicate_number.as_symbol_name();
+                        parse_rule(rule_map, &mut new_pattern_name, &symbols, nondeplicate_number, unnamed_pattern_map)?;
 
                         let mut rule = BNFRule::new(new_symbol_name.clone());
                         let or_patterns = &mut rule.or_patterns;
 
                         or_patterns.push(vec![BNFSymbol::Null]);
-                        or_patterns.push(vec![BNFSymbol::NonterminalSymbolName(new_pattern_name), BNFSymbol::NonterminalSymbolName(new_symbol_name)]);
+                        or_patterns.push(vec![BNFSymbol::NonterminalSymbolName(new_pattern_name), BNFSymbol::NonterminalSymbolName(new_symbol_name.clone())]);
 
                         rule_map.insert(rule.nonterminal_symbol_name.clone(), rule);
                     },
                     Delimiter::Bracket => { // new_symbol ::= new_pattern | null
-                        let new_pattern_name = nondeplicate_number.as_symbol_name();
-                        parse_rule(rule_map, new_pattern_name.clone(), &symbols, nondeplicate_number)?;
+                        let mut new_pattern_name = nondeplicate_number.as_symbol_name();
+                        parse_rule(rule_map, &mut new_pattern_name, &symbols, nondeplicate_number, unnamed_pattern_map)?;
 
-                        let mut rule = BNFRule::new(new_symbol_name);
+                        let mut rule = BNFRule::new(new_symbol_name.clone());
                         let or_patterns = &mut rule.or_patterns;
 
                         or_patterns.push(vec![BNFSymbol::NonterminalSymbolName(new_pattern_name)]);
@@ -166,6 +165,7 @@ fn parse_rule(rule_map: &mut HashMap<String, BNFRule>, nonterminal_symbol_name: 
                     }
                 }
 
+                pattern.push(BNFSymbol::NonterminalSymbolName(new_symbol_name.clone()));
             },
             TokenTree::Literal(literal) => {
                 let string = match StringLit::try_from(literal) {
@@ -186,7 +186,23 @@ fn parse_rule(rule_map: &mut HashMap<String, BNFRule>, nonterminal_symbol_name: 
         or_patterns.push(pattern);
     }
 
-    rule_map.insert(nonterminal_symbol_name, rule);
+    // merge unnamed patteren
+    if nonterminal_symbol_name.starts_with(' ') {
+        match unnamed_pattern_map.get(or_patterns) {
+            Some(temp_name) => {
+                *nonterminal_symbol_name = temp_name.clone();
+            },
+            _ => {
+                unnamed_pattern_map.insert(or_patterns.clone(), nonterminal_symbol_name.clone());
+
+                rule.nonterminal_symbol_name = nonterminal_symbol_name.clone();
+                rule_map.insert(nonterminal_symbol_name.clone(), rule);
+            }
+        }
+    } else {
+        rule.nonterminal_symbol_name = nonterminal_symbol_name.clone();
+        rule_map.insert(nonterminal_symbol_name.clone(), rule);
+    }
 
     return Ok(());
 }
