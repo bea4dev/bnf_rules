@@ -293,6 +293,16 @@ impl BNFSymbol {
         }
     }
 
+    pub fn get_symbol_name(&self) -> &str {
+        return match self {
+            BNFSymbol::TerminalSymbolRegex(name) => name.as_str(),
+            BNFSymbol::NonterminalSymbolName(name) => name.as_str(),
+            BNFSymbol::TerminalSymbolString(name) => name.as_str(),
+            BNFSymbol::Null => "Null",
+            BNFSymbol::EOF => "EOF"
+        }
+    }
+
 }
 
 
@@ -825,7 +835,29 @@ impl ParserGenerator {
 
     fn insert_opreration(&self, operation_map: &mut HashMap<BNFSymbol, Operation>, symbol: &BNFSymbol, operation: Operation) -> Result<(), String> {
         if operation_map.contains_key(symbol) {
-            return Err(format!("{:?} {:?} conflict!", operation_map.get(symbol).unwrap(), operation));
+            let mut message = format!("{:?} {:?} conflict!", operation_map.get(symbol).unwrap(), operation);
+
+            match symbol {
+                BNFSymbol::NonterminalSymbolName(symbol_name) => {
+                    if !symbol_name.is_empty() {
+                        message += format!(" | Symbol : {} ::=", symbol_name).as_str();
+
+                        let rule = self.rule_map.get(symbol_name).unwrap();
+                        for pattern in rule.or_patterns.iter() {
+                            for symbol in pattern.iter() {
+                                message += format!(" {} ", symbol.get_symbol_name()).as_str();
+                            }
+                            message += "|";
+                        }
+                    }
+                },
+                _ => {
+                    message += format!(" | Symbol : '{}'", symbol.get_symbol_name()).as_str();
+                }
+            }
+
+
+            return Err(message);
         }
         operation_map.insert(symbol.clone(), operation);
         return Ok(());
