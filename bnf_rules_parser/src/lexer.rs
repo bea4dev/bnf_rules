@@ -2,7 +2,6 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::rc::Rc;
 use either::Either;
-use regex::{Error, Regex};
 
 
 
@@ -16,7 +15,23 @@ pub struct Lexer {
 impl Lexer {
 
     pub fn new(mut terminal_symbols: Vec<TerminalSymbol>) -> Self {
-        terminal_symbols.push(TerminalSymbol::new_from_regex(r"(\t|[ 　])+", usize::MAX).unwrap());
+        fn blank_tokenizer(source: &Vec<char>, mut current_position: usize) -> usize {
+            let mut iteration_count = 0;
+            loop {
+                let current_char = match source.get(current_position) {
+                    Some(ch) => ch,
+                    _ => break
+                };
+                let chars = ['\t', ' ', '　'];
+                if !chars.contains(&current_char) {
+                    break;
+                }
+                iteration_count += 1;
+                current_position += 1;
+            }
+            return iteration_count;
+        }
+        terminal_symbols.push(TerminalSymbol::new_from_tokenizer_fn(blank_tokenizer, u32::MAX));
 
         let mut symbols = Vec::new();
         for symbol in terminal_symbols {
@@ -29,7 +44,7 @@ impl Lexer {
         };
     }
 
-    pub fn scan(&self, source: &str) -> Result<Vec<Token>, UnexpectedToken> {
+    pub fn scan(&self, source: &str) -> Result<Vec<Token>, UnexpectedCharacter> {
 
         let source = source.chars().collect::<Vec<char>>();
         let source_length = source.len();
@@ -41,12 +56,10 @@ impl Lexer {
 
         let mut tokens = Vec::<Token>::new();
         let mut source_index = 0;
-        let mut current_line = 1;
-        let mut current_column = 1;
 
         loop {
             let token = self.read_until_token_found(&source, &mut source_index)?;
-            if token.symbol_id != usize::MAX {
+            if token.symbol_id != u32::MAX {
                 tokens.push(token);
             }
 
@@ -55,196 +68,83 @@ impl Lexer {
             }
         }
 
-        let eof_position = TokenPosition::new(source_length - 1, 0, 0, 0);
-        tokens.push(Token::new_eof(eof_position, self.eof_symbol.clone()));
+        Self::set_line_and_column_info_for_tokens(&source, &mut tokens);
 
-        Lexer::set_line_and_column_info(&source, &mut tokens);
+        let eof_position = TokenPosition::new(source_length - 1, 0, 0, 0);
+        let mut eof_token = Token::new_eof(eof_position, self.eof_symbol.clone());
+        Self::set_line_and_column_info_for_eof_token(&source, &mut eof_token);
+        tokens.push(eof_token);
 
         return Ok(tokens);
     }
 
-    pub fn read_until_token_found(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, UnexpectedToken> {
+    fn read_until_token_found(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, UnexpectedCharacter> {
+        let mut terminal_symbol = self.eof_symbol.clone();
+        let mut text_length = 0;
 
         let start_position = *source_index;
-
-        let mut string_symbol_token = Option::<Token>::None;
-        let mut regex_symbol_token = Option::<Token>::None;
-        let mut i = start_position;
-        let mut word_buffer = String::new();
-        let mut phase = 0;
-
-        'all : loop {
-            let char = source[i];
-            word_buffer.push(char);
-
-            let word_length = i - start_position + 1;
-
-            let mut is_matched = false;
-            for terminal_symbol in self.terminal_symbols.iter() {
-                if phase == 0 {
-                    if terminal_symbol.judgement.is_left() {
-                        continue;
-                    }
-                } else {
-                    if terminal_symbol.judgement.is_right() {
-                        continue;
-                    }
-                }
-
-                if terminal_symbol.is_match(word_buffer.as_str()) {
-                    is_matched = true;
-                    break;
-                }
+        for symbol in self.terminal_symbols.iter() {
+            let length = symbol.tokenize(source, start_position);
+            if length > text_length {
+                terminal_symbol = symbol.clone();
+                text_length = length;
             }
-
-            if !is_matched || i + 1 == source.len() {
-                if word_length == 1 && !is_matched {
-
-                    if phase == 0 {
-                        i = start_position;
-                        word_buffer = String::new();
-                        phase = 1;
-                        continue;
-                    } else {
-                        i = start_position;
-                        word_buffer = String::new();
-
-                        loop {
-                            let char = source[i];
-                            word_buffer.push(char);
-
-                            let word_length = i - start_position + 1;
-
-                            let mut matched_symbol = Option::<Rc<TerminalSymbol>>::None;
-
-                            for terminal_symbol in self.terminal_symbols.iter() {
-                                if terminal_symbol.judgement.is_right() {
-                                    continue;
-                                }
-
-                                if terminal_symbol.is_match_strict(word_buffer.as_str()) {
-                                    matched_symbol = Some(terminal_symbol.clone());
-                                }
-                            }
-
-                            match matched_symbol {
-                                Some(symbol) => {
-                                    let position = TokenPosition::new(start_position, word_length, 0, 0);
-                                    regex_symbol_token = Some(Token::new(position, word_buffer.clone(), symbol.clone(), symbol.symbol_id));
-                                    break 'all;
-                                },
-                                _ => {}
-                            }
-
-                            if i + 1 == source.len() {
-                                break 'all;
-                            }
-
-                            i += 1;
-                        }
-
-                    }
-
-                }
-
-                let mut word_length = word_length;
-
-                if !is_matched {
-                    word_buffer.pop();
-                    word_length -= 1;
-                }
-
-                let mut matched_symbol = Option::<Rc<TerminalSymbol>>::None;
-
-                for terminal_symbol in self.terminal_symbols.iter() {
-                    if phase == 0 {
-                        if terminal_symbol.judgement.is_left() {
-                            continue;
-                        }
-                    } else {
-                        if terminal_symbol.judgement.is_right() {
-                            continue;
-                        }
-                    }
-
-                    if terminal_symbol.is_match_strict(word_buffer.as_str()) {
-                        matched_symbol = Some(terminal_symbol.clone());
-                    }
-                }
-
-                match matched_symbol {
-                    Some(symbol) => {
-                        let position = TokenPosition::new(start_position, word_length, 0, 0);
-                        if phase == 0 {
-                            string_symbol_token = Some(Token::new(position, word_buffer.clone(), symbol.clone(), symbol.symbol_id));
-                        } else {
-                            regex_symbol_token = Some(Token::new(position, word_buffer.clone(), symbol.clone(), symbol.symbol_id));
-                        }
-                    },
-                    _ => {}
-                }
-
-                if phase == 0 {
-                    if string_symbol_token.is_some() {
-                        break;
-                    }
-                    i = start_position;
-                    word_buffer = String::new();
-                    phase = 1;
-                    continue;
-                } else {
-                    break;
-                }
-            }
-
-            i += 1;
         }
 
+        let end_position = start_position + text_length;
+        let token_text = source[start_position..end_position].iter().collect::<String>();
 
-        return match string_symbol_token {
-            Some(string_token) => {
-                match regex_symbol_token {
-                    Some(regex_token) => {
-                        if string_token.position.text_length >= regex_token.position.text_length {
-                            *source_index = start_position + string_token.position.text_length;
-                            Ok(string_token)
-                        } else {
-                            *source_index = start_position + regex_token.position.text_length;
-                            Ok(regex_token)
-                        }
-                    },
-                    _ => {
-                        *source_index = start_position + string_token.position.text_length;
-                        Ok(string_token)
-                    }
-                }
-            },
-            _ => {
-                match regex_symbol_token {
-                    Some(regex_token) => {
-                        *source_index = start_position + regex_token.position.text_length;
-                        Ok(regex_token)
-                    },
-                    _ => {
-                        let position = TokenPosition::new(start_position, 1, 0, 0);
-                        Err(UnexpectedToken { position, text: source[start_position].to_string() })
-                    }
-                }
-            }
-        };
+        *source_index = end_position;
+
+        return if text_length == 0 {
+            let mut unexpected = UnexpectedCharacter { position: TokenPosition {
+                start_position,
+                text_length: 1,
+                line: 0,
+                column: 0,
+            }, character: source[start_position] };
+
+            let mut position_temp_map = HashMap::<usize, &mut TokenPosition>::new();
+            position_temp_map.insert(start_position, &mut unexpected.position);
+            Self::set_line_and_column_info(source, &mut position_temp_map);
+
+            Err(unexpected)
+        } else {
+            let symbol_id = terminal_symbol.symbol_id;
+            Ok(Token {
+                position: TokenPosition {
+                    start_position,
+                    text_length,
+                    line: 0,
+                    column: 0,
+                },
+                text: token_text,
+                terminal_symbol,
+                is_eof: false,
+                symbol_id,
+            })
+        }
     }
 
 
-    pub fn set_line_and_column_info(source: &Vec<char>, tokens: &mut Vec<Token>) {
+    fn set_line_and_column_info_for_tokens(source: &Vec<char>, tokens: &mut Vec<Token>) {
+        let mut position_map = HashMap::<usize, &mut TokenPosition>::new();
+        for token in tokens.iter_mut() {
+            position_map.insert(token.position.start_position, &mut token.position);
+        }
+        Self::set_line_and_column_info(source, &mut position_map);
+    }
+
+    fn set_line_and_column_info_for_eof_token(source: &Vec<char>, token: &mut Token) {
+        let mut position_map = HashMap::<usize, &mut TokenPosition>::new();
+        position_map.insert(token.position.start_position, &mut token.position);
+        Self::set_line_and_column_info(source, &mut position_map);
+    }
+
+    fn set_line_and_column_info(source: &Vec<char>, position_map: &mut HashMap<usize, &mut TokenPosition>) {
         let mut i = 0;
         let mut line = 1;
         let mut column = 1;
-
-        let mut position_map = HashMap::<usize, Vec<&mut TokenPosition>>::new();
-        for token in tokens.iter_mut() {
-            let positions = position_map.entry(token.position.start_position).or_insert_with(|| vec![]);
-            positions.push(&mut token.position);
-        }
 
         let mut previous_column = column;
 
@@ -252,11 +152,9 @@ impl Lexer {
             let char = source[i];
 
             match position_map.get_mut(&i) {
-                Some(positions) => {
-                    for position in positions.iter_mut() {
-                        position.line = line;
-                        position.column = column;
-                    }
+                Some(position) => {
+                    position.line = line;
+                    position.column = column;
                 },
                 _ => {}
             }
@@ -311,53 +209,53 @@ impl Lexer {
 }
 
 #[derive(Debug)]
-pub struct UnexpectedToken {
+pub struct UnexpectedCharacter {
     pub position: TokenPosition,
-    pub text: String
+    pub character: char
 }
+
+type TokenizerFn = fn (source: &Vec<char>, current_position: usize) -> usize;
 
 #[derive(Debug)]
 pub struct TerminalSymbol {
-    judgement: Either<Regex, String>,
-    symbol_id: usize
+    judgement: Either<TokenizerFn, Vec<char>>,
+    symbol_id: u32
 }
 
 impl TerminalSymbol {
 
-    pub fn new_from_regex(regex_str: &str, symbol_id: usize) -> Result<Self, Error> {
-        let regex = Regex::new(format!(r"^{}$", regex_str).as_str())?;
-        return Ok(Self {
-            judgement: Either::Left(regex),
-            symbol_id
-        });
-    }
-
-    pub fn new_from_string(judge_str: &str, symbol_id: usize) -> Self {
+    pub fn new_from_tokenizer_fn(tokenizer: TokenizerFn, symbol_id: u32) -> Self {
         return Self {
-            judgement: Either::Right(judge_str.to_string()),
+            judgement: Either::Left(tokenizer),
             symbol_id
         };
     }
 
-
-    pub fn is_match(&self, target_str: &str) -> bool {
-        return match &self.judgement {
-            Either::Left(regex) => regex.is_match(target_str),
-            Either::Right(judge_string) => {
-                if target_str.len() <= judge_string.len() {
-                    judge_string.starts_with(target_str)
-                } else {
-                    false
-                }
-            }
+    pub fn new_from_string(judge_str: &str, symbol_id: u32) -> Self {
+        return Self {
+            judgement: Either::Right(judge_str.chars().collect::<Vec<char>>()),
+            symbol_id
         };
     }
 
-    pub fn is_match_strict(&self, target_str: &str) -> bool {
+    pub fn tokenize(&self, source: &Vec<char>, current_position: usize) -> usize {
         return match &self.judgement {
-            Either::Left(regex) => regex.is_match(target_str),
-            Either::Right(judge_string) => target_str == judge_string
-        };
+            Either::Left(tokenizer_fn) => {
+                tokenizer_fn(source, current_position)
+            }
+            Either::Right(string) => {
+                for i in 0..string.len() {
+                    let current_char = match source.get(current_position + i) {
+                        Some(ch) => ch.clone(),
+                        _ => return 0 // reject
+                    };
+                    if current_char != string[i] {
+                        return 0; // reject
+                    }
+                }
+                string.len() // accept
+            }
+        }
     }
 
 }
@@ -371,13 +269,13 @@ pub struct Token {
     pub text: String,
     pub terminal_symbol: Rc<TerminalSymbol>,
     pub is_eof: bool,
-    pub symbol_id: usize
+    pub symbol_id: u32
 }
 
 
 impl Token {
 
-    pub fn new(position: TokenPosition, text: String, terminal_symbol: Rc<TerminalSymbol>, symbol_id: usize) -> Self {
+    pub fn new(position: TokenPosition, text: String, terminal_symbol: Rc<TerminalSymbol>, symbol_id: u32) -> Self {
         return Self {
             position,
             text,
@@ -400,7 +298,7 @@ impl Token {
 }
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct TokenPosition {
     pub start_position: usize,
     pub text_length: usize,
