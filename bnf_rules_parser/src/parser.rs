@@ -1,18 +1,18 @@
 use either::Either;
 use crate::{OPERATION_NONE, OPERATION_SHIFT, OPERATION_GOTO, OPERATION_REDUCE, OPERATION_ACCEPT};
-use crate::lexer::{TokenPosition, Token, UnexpectedCharacter};
+use crate::lexer::{TokenPosition, Token};
 
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub enum ASTNode {
     NonTerminal {
-        internal_symbol_id: Option<u32>,
+        internal_symbol_id: u32,
         symbol_name: String,
-        children: Vec<ASTNode>,
+        children: Result<Vec<ASTNode>, Vec<Token>>,
         position: TokenPosition
     },
-    Terminal{
-        internal_symbol_id: Option<u32>,
+    Terminal {
+        internal_symbol_id: u32,
         text: String,
         position: TokenPosition
     }
@@ -23,8 +23,8 @@ impl ASTNode {
 
     fn get_symbol_id(&self) -> u32 {
         return match self {
-            ASTNode::NonTerminal { internal_symbol_id: symbol_id, symbol_name: _, children: _, position: _ } => symbol_id.unwrap().clone(),
-            ASTNode::Terminal { internal_symbol_id: symbol_id, text: _, position: _ } => symbol_id.unwrap().clone()
+            ASTNode::NonTerminal { internal_symbol_id: symbol_id, symbol_name: _, children: _, position: _ } => symbol_id.clone(),
+            ASTNode::Terminal { internal_symbol_id: symbol_id, text: _, position: _ } => symbol_id.clone()
         }
     }
 
@@ -88,11 +88,23 @@ pub enum ParseErrorType {
 
 
 
-pub fn __parse(tokens: Result<Vec<Token>, UnexpectedCharacter>, rule_pattern_name: &[&str], lr_table: &[&[(usize, usize)]], bnf_rules: &[(u32, &[u32])]) -> Result<ASTNode, ParseError> {
+pub fn __parse(
+    tokens: Result<Vec<Token>, Vec<Token>>,
+    rule_pattern_name: &[&str],
+    lr_table: &[&[(usize, usize)]],
+    bnf_rules: &[(u32, &[u32])],
+    first_sets: &[(u32, &[u32])],
+    non_terminal_symbols: &[&[usize]]
+) -> Result<ASTNode, ASTNode> {
+
+    let mut has_error = false;
 
     let mut tokens = match tokens {
         Ok(tokens) => tokens,
-        Err(err) => return Err(ParseError::new_from_position(Some(err.position), "Unexpected token(Lexer).".to_string(), ParseErrorType::UnexpectedToken))
+        Err(tokens) => {
+            has_error = true;
+            tokens
+        }
     };
 
     let last_token_position = match tokens.last() {
@@ -108,8 +120,14 @@ pub fn __parse(tokens: Result<Vec<Token>, UnexpectedCharacter>, rule_pattern_nam
     stack.push(0);
 
     loop {
-        let stack_last = get_stack_last(&stack, &tokens)?;
-        let symbol_id = get_tokens_last_symbol_id(&tokens)?;
+        let stack_last = stack.last().unwrap().clone();
+        let symbol_id = tokens.last().unwrap().symbol_id;
+        if symbol_id == u32::MAX - 1 {
+            // unexpected character
+            has_error |= recover_error(&mut stack, &mut tokens, bnf_rules, first_sets);
+            continue;
+        }
+
         let operation = &lr_table[stack_last][symbol_id as usize];
 
         if operation.0 == OPERATION_NONE {
@@ -204,7 +222,7 @@ pub fn __parse(tokens: Result<Vec<Token>, UnexpectedCharacter>, rule_pattern_nam
                 let rule_root_symbol_id = rule.0;
                 let rule_name = rule_pattern_name[reduce_rule_id].to_string();
 
-                let node = ASTNode::NonTerminal { internal_symbol_id: Some(rule_root_symbol_id), symbol_name: rule_name, children: reduce_children, position };
+                let node = ASTNode::NonTerminal { internal_symbol_id: rule_root_symbol_id, symbol_name: rule_name, children: reduce_children, position };
 
                 reduced_buffer.push(Either::Right(node));
 
@@ -228,24 +246,71 @@ pub fn __parse(tokens: Result<Vec<Token>, UnexpectedCharacter>, rule_pattern_nam
         return Err(ParseError::new_from_position(None, "May be internal error. reduce_buffer.len() is not 1.".to_string(), ParseErrorType::InternalError));
     }
 
-    let mut node = reduced_buffer.remove(0).right().unwrap();
-    unset_internal_symbol_id(&mut node);
+    let node = reduced_buffer.remove(0).right().unwrap();
 
     return Ok(node);
 }
 
 
-fn unset_internal_symbol_id(node: &mut ASTNode) {
-    match node {
-        ASTNode::NonTerminal { internal_symbol_id, symbol_name: _, children, position: _ } => {
-            *internal_symbol_id = None;
-            for child in children.iter_mut() {
-                unset_internal_symbol_id(child);
+fn recover_error(
+    stack: &mut Vec<usize>,
+    tokens: &mut Vec<Token>,
+    reduce_buffer: &mut Vec<Either<Token, ASTNode>>,
+    rule_pattern_name: &[&str],
+    first_sets: &[(u32, &[u32])],
+    non_terminal_symbols: &[&[usize]]
+) -> bool {
+    loop {
+        let stack_top = match stack.last() {
+            None => return false,
+            Some(top) => *top
+        };
+
+        let non_terminal_symbols = non_terminal_symbols[stack_top];
+        let non_terminal_symbol_id = match non_terminal_symbols.last() {
+            Some(symbol_id) => *symbol_id,
+            _ => {
+                stack.pop();
+                continue;
             }
+        };
+
+        let mut first_symbols = [].as_slice();
+        let mut rule_id = 0;
+        for first_sets_entry in first_sets {
+            let root_symbol_id = first_sets_entry.0;
+            if root_symbol_id == non_terminal_symbol_id as u32 {
+                first_symbols = first_sets_entry.1;
+                break;
+            }
+            rule_id += 1;
         }
-        ASTNode::Terminal { internal_symbol_id, text: _, position: _ } => {
-            *internal_symbol_id = None;
+
+        if first_symbols.is_empty() {
+            unreachable!();
         }
+
+        let mut popped_tokens = Vec::<Token>::new();
+        loop {
+            match tokens.last() {
+                Some(token) => {
+                    if first_symbols.contains(&token.symbol_id) {
+                        break;
+                    }
+                },
+                _ => unreachable!()
+            };
+
+            let popped_token = tokens.pop().unwrap();
+            popped_tokens.push(popped_token);
+        }
+
+        let node = ASTNode::NonTerminal {
+            internal_symbol_id: non_terminal_symbol_id as u32,
+            symbol_name: rule_pattern_name[rule_id].to_string(),
+            children: Err(popped_tokens),
+            position: TokenPosition {},
+        };
     }
 }
 
@@ -279,34 +344,4 @@ fn get_buffer_position(buffer: &Vec<Either<Token, ASTNode>>) -> Option<TokenPosi
     }
 
     return Some(merged_position);
-}
-
-
-fn get_stack_last(stack: &Vec<usize>, tokens: &Vec<Token>) -> Result<usize, ParseError> {
-    return match stack.last() {
-        Some(last) => Ok(*last),
-        _ => return Err(ParseError::new(tokens.first().cloned(), "Elements of the parser stack are missing.".to_string(), ParseErrorType::InvalidSyntax))
-    };
-}
-
-
-fn get_tokens_last(tokens: &Vec<Token>) -> Result<&Token, ParseError> {
-    return match tokens.last() {
-        Some(last) => Ok(last),
-        _ => return Err(ParseError::new(None, "Elements of the tokens are missing.".to_string(), ParseErrorType::InvalidSyntax))
-    };
-}
-
-
-fn pop_token(tokens: &mut Vec<Token>) -> Result<Token, ParseError> {
-    return match tokens.pop() {
-        Some(last) => Ok(last),
-        _ => return Err(ParseError::new(None, "Elements of the tokens are missing.".to_string(), ParseErrorType::InvalidSyntax))
-    };
-}
-
-
-fn get_tokens_last_symbol_id(tokens: &Vec<Token>) -> Result<u32, ParseError> {
-    let token = get_tokens_last(tokens)?;
-    return Ok(token.symbol_id);
 }
