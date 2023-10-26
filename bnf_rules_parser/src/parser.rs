@@ -8,7 +8,7 @@ pub enum ASTNode {
     NonTerminal {
         internal_symbol_id: u32,
         symbol_name: String,
-        children: Result<Vec<ASTNode>, Vec<Token>>,
+        children: Vec<Result<ASTNode, Token>>,
         position: TokenPosition
     },
     Terminal {
@@ -38,52 +38,10 @@ impl ASTNode {
 }
 
 
-
-
-#[derive(Debug, Eq, Clone, Hash, PartialEq)]
-pub enum Symbol {
-    String(String),
-    Regex(String)
-}
-
-
-#[derive(Debug, Clone)]
-pub struct ParseError {
-    pub position: Option<TokenPosition>,
-    pub message: String,
-    pub error_type: ParseErrorType
-}
-
-
-impl ParseError {
-    pub fn new(token: Option<Token>, message: String, error_type: ParseErrorType) -> Self {
-        let position = match token {
-            Some(token) => Some(token.position),
-            _ => None
-        };
-        return Self {
-            position,
-            message,
-            error_type
-        }
-    }
-
-    pub fn new_from_position(position: Option<TokenPosition>, message: String, error_type: ParseErrorType) -> Self {
-        return Self {
-            position,
-            message,
-            error_type
-        }
-    }
-
-}
-
-
-#[derive(Debug, Clone)]
-pub enum ParseErrorType {
-    InvalidSyntax,
-    UnexpectedToken,
-    InternalError
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+pub struct IncompleteAST {
+    pub node: Result<ASTNode, Vec<Either<Token, ASTNode>>>,
+    pub failed_to_recover: bool
 }
 
 
@@ -95,9 +53,10 @@ pub fn __parse(
     bnf_rules: &[(u32, &[u32])],
     first_sets: &[(u32, &[u32])],
     non_terminal_symbols: &[&[usize]]
-) -> Result<ASTNode, ASTNode> {
+) -> Result<ASTNode, IncompleteAST> {
 
     let mut has_error = false;
+    let mut success_to_recover = true;
 
     let mut tokens = match tokens {
         Ok(tokens) => tokens,
@@ -115,7 +74,7 @@ pub fn __parse(
     tokens.reverse();
 
     let mut stack = Vec::<usize>::new();
-    let mut reduced_buffer = Vec::<Either<Token, ASTNode>>::new();
+    let mut reduce_buffer = Vec::<Either<Token, ASTNode>>::new();
 
     stack.push(0);
 
@@ -124,26 +83,30 @@ pub fn __parse(
         let symbol_id = tokens.last().unwrap().symbol_id;
         if symbol_id == u32::MAX - 1 {
             // unexpected character
-            has_error |= recover_error(&mut stack, &mut tokens, bnf_rules, first_sets);
+            success_to_recover &= recover_error(&mut stack, &mut tokens, &mut reduce_buffer, rule_pattern_name, first_sets, non_terminal_symbols);
             continue;
         }
 
         let operation = &lr_table[stack_last][symbol_id as usize];
 
         if operation.0 == OPERATION_NONE {
-            let position = match tokens.last() {
-                Some(token) => Some(token.position.clone()),
-                _ => None
-            };
-            return Err(ParseError::new_from_position(position, "Invalid operation.".to_string(), ParseErrorType::InvalidSyntax))
+            success_to_recover &= recover_error(&mut stack, &mut tokens, &mut reduce_buffer, rule_pattern_name, first_sets, non_terminal_symbols);
+            continue;
         }
 
         let operation_argument = operation.1;
 
         match operation.0 {
             OPERATION_SHIFT => {
-                let popped_token = pop_token(&mut tokens)?;
-                reduced_buffer.push(Either::Left(popped_token));
+                if tokens.last().is_none() {
+                    // fatal error
+                    has_error = true;
+                    success_to_recover = false;
+                    break;
+                }
+
+                let popped_token = tokens.pop().unwrap();
+                reduce_buffer.push(Either::Left(popped_token));
 
                 stack.push(operation_argument);
             },
@@ -153,22 +116,26 @@ pub fn __parse(
                 let rule_pattern = rule.1;
                 let right_side_count = rule_pattern.len();
 
-                if reduced_buffer.len() < right_side_count {
-                    return Err(ParseError::new_from_position(get_buffer_position(&reduced_buffer), "Invalid syntax.".to_string(), ParseErrorType::InvalidSyntax));
+                if reduce_buffer.len() < right_side_count {
+                    // fatal error
+                    has_error = true;
+                    success_to_recover = false;
+                    break;
                 }
 
                 let mut buffer = Vec::<Either<Token, ASTNode>>::new();
                 for _ in 0..right_side_count {
-                    buffer.push(reduced_buffer.pop().unwrap());
+                    buffer.push(reduce_buffer.pop().unwrap());
 
                     if stack.pop().is_none() {
-                        return Err(ParseError::new_from_position(get_buffer_position(&buffer), "Invalid syntax.".to_string(), ParseErrorType::InvalidSyntax));
+                        // fatal error
+                        has_error = true;
+                        success_to_recover = false;
+                        break;
                     }
                 }
                 buffer.reverse();
 
-
-                let mut reduce_children = Vec::<ASTNode>::new();
 
                 let mut position = if buffer.len() == 0 {
                     match tokens.last() {
@@ -183,40 +150,56 @@ pub fn __parse(
                     TokenPosition::marge_start_position()
                 };
 
-                for i in 0..buffer.len() {
-                    let token_or_node = &buffer[i];
-                    let symbol_id = get_token_or_node_symbol_id(token_or_node);
+                let mut reduce_children = Vec::<Result<ASTNode, Token>>::new();
+
+                let mut i = 0;
+                for token_or_node in buffer {
+                    let symbol_id = get_token_or_node_symbol_id(&token_or_node);
                     let pattern_symbol_id = rule_pattern[i];
 
                     if symbol_id != pattern_symbol_id {
-                        return Err(ParseError::new_from_position(get_token_or_node_position(Some(&token_or_node)), "Invalid syntax.".to_string(), ParseErrorType::InvalidSyntax))
+                        // fatal error
+                        has_error = true;
+                        success_to_recover = false;
+                        break;
                     }
 
                     match token_or_node {
                         Either::Left(token) => {
-                            let node = ASTNode::Terminal { internal_symbol_id: Some(symbol_id), text: token.text.clone(), position: token.position.clone() };
+                            let node = ASTNode::Terminal { internal_symbol_id: symbol_id, text: token.text.clone(), position: token.position.clone() };
                             position.marge(&node.get_position());
-                            reduce_children.push(node);
+                            reduce_children.push(Ok(node));
                         },
                         Either::Right(node) => {
                             position.marge(&node.get_position());
 
                             match node {
-                                ASTNode::NonTerminal { internal_symbol_id: _, symbol_name, children, position: _ } => {
+                                ASTNode::NonTerminal { internal_symbol_id, symbol_name, children, position } => {
                                     if symbol_name.starts_with(" ") {
                                         for child in children.iter() {
                                             reduce_children.push(child.clone());
                                         }
                                     } else {
-                                        reduce_children.push(node.clone());
+                                        reduce_children.push(Ok(ASTNode::NonTerminal {
+                                            internal_symbol_id,
+                                            symbol_name,
+                                            children,
+                                            position,
+                                        }));
                                     }
                                 },
-                                ASTNode::Terminal { internal_symbol_id: _, text: _, position: _ } => {
-                                    reduce_children.push(node.clone());
+                                ASTNode::Terminal { internal_symbol_id, text, position } => {
+                                    reduce_children.push(Ok(ASTNode::Terminal {
+                                        internal_symbol_id,
+                                        text,
+                                        position,
+                                    }));
                                 }
                             }
                         },
                     };
+
+                    i += 1;
                 }
 
                 let rule_root_symbol_id = rule.0;
@@ -224,15 +207,25 @@ pub fn __parse(
 
                 let node = ASTNode::NonTerminal { internal_symbol_id: rule_root_symbol_id, symbol_name: rule_name, children: reduce_children, position };
 
-                reduced_buffer.push(Either::Right(node));
+                reduce_buffer.push(Either::Right(node));
 
-
-                let stack_last = get_stack_last(&stack, &tokens)?;
+                let stack_last = match stack.last() {
+                    None => {
+                        // fatal error
+                        has_error = true;
+                        success_to_recover = false;
+                        break;
+                    }
+                    Some(last) => *last,
+                };
 
                 let operation = &lr_table[stack_last][rule_root_symbol_id as usize];
 
                 if operation.0 != OPERATION_GOTO {
-                    return Err(ParseError::new_from_position(get_buffer_position(&reduced_buffer), "Invalid operation.".to_string(), ParseErrorType::InvalidSyntax))
+                    // fatal error
+                    has_error = true;
+                    success_to_recover = false;
+                    break;
                 }
 
                 stack.push(operation.1);
@@ -242,13 +235,24 @@ pub fn __parse(
         }
     }
 
-    if reduced_buffer.len() != 1 {
-        return Err(ParseError::new_from_position(None, "May be internal error. reduce_buffer.len() is not 1.".to_string(), ParseErrorType::InternalError));
+    if reduce_buffer.len() != 1 {
+        has_error = true;
+        success_to_recover = false;
     }
+    let node = if success_to_recover {
+        Ok(reduce_buffer.remove(0).right().unwrap())
+    } else {
+        Err(reduce_buffer)
+    };
 
-    let node = reduced_buffer.remove(0).right().unwrap();
-
-    return Ok(node);
+    return if has_error {
+        Err(IncompleteAST {
+            node,
+            failed_to_recover: !success_to_recover,
+        })
+    } else {
+        Ok(node.unwrap())
+    };
 }
 
 
@@ -290,27 +294,44 @@ fn recover_error(
             unreachable!();
         }
 
-        let mut popped_tokens = Vec::<Token>::new();
+        let mut popped_tokens = Vec::<Result<ASTNode, Token>>::new();
         loop {
             match tokens.last() {
                 Some(token) => {
+                    println!("token {} {}", &token.text, token.symbol_id);
                     if first_symbols.contains(&token.symbol_id) {
                         break;
                     }
                 },
-                _ => unreachable!()
+                _ => {
+                    println!("{}", rule_pattern_name[rule_id]);
+                    println!("{:?}", first_symbols);
+                    unreachable!()
+                }
             };
 
             let popped_token = tokens.pop().unwrap();
-            popped_tokens.push(popped_token);
+            popped_tokens.push(Err(popped_token));
         }
+
+        let position = if popped_tokens.is_empty() {
+            tokens.last().unwrap().position.clone()
+        } else {
+            let mut position = TokenPosition::marge_start_position();
+            for token in tokens.iter() {
+                position.marge(&token.position);
+            }
+            position
+        };
 
         let node = ASTNode::NonTerminal {
             internal_symbol_id: non_terminal_symbol_id as u32,
             symbol_name: rule_pattern_name[rule_id].to_string(),
-            children: Err(popped_tokens),
-            position: TokenPosition {},
+            children: popped_tokens,
+            position,
         };
+
+        reduce_buffer.push(Either::Right(node));
     }
 }
 

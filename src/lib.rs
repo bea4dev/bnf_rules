@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     pub fn test() {
-        let node: ASTNode = parse_source("10 + (200 + -10)").unwrap();
+        let node: ASTNode = parse_source("10 + (200 + -10))").unwrap();
         dbg!(&node);
     }
 

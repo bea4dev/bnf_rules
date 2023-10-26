@@ -232,7 +232,7 @@ impl Lexer {
 
 type TokenizerFn = fn (source: &Vec<char>, current_position: usize) -> usize;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct TerminalSymbol {
     judgement: Either<TokenizerFn, Vec<char>>,
     symbol_id: u32
@@ -279,7 +279,7 @@ impl TerminalSymbol {
 
 
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct Token {
     pub position: TokenPosition,
     pub text: String,
