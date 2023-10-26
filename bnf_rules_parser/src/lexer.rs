@@ -7,8 +7,7 @@ use either::Either;
 
 pub struct Lexer {
     terminal_symbols: Vec<Rc<TerminalSymbol>>,
-    eof_symbol: Rc<TerminalSymbol>,
-    unexpected_character: Rc<TerminalSymbol>
+    eof_symbol: Rc<TerminalSymbol>
 }
 
 
@@ -41,14 +40,11 @@ impl Lexer {
 
         return Self {
             terminal_symbols: symbols,
-            eof_symbol: Rc::new(TerminalSymbol::new_from_string("EOF", 0)),
-            unexpected_character: Rc::new(TerminalSymbol::new_from_string("UNEXPECTED_CHARACTER", u32::MAX - 1)),
+            eof_symbol: Rc::new(TerminalSymbol::new_from_string("EOF", 0))
         };
     }
 
-    pub fn scan(&self, source: &str) -> Result<Vec<Token>, Vec<Token>> {
-
-        let mut has_error = false;
+    pub fn scan(&self, source: &str) -> Result<Vec<Token>, UnexpectedCharacter> {
 
         let source = source.chars().collect::<Vec<char>>();
         let source_length = source.len();
@@ -62,14 +58,7 @@ impl Lexer {
         let mut source_index = 0;
 
         loop {
-            let token = match self.read_until_token_found(&source, &mut source_index) {
-                Ok(token) => token,
-                Err(token) => {
-                    // unexpected character
-                    has_error = true;
-                    token
-                }
-            };
+            let token = self.read_until_token_found(&source, &mut source_index)?;
             if token.symbol_id != u32::MAX {
                 tokens.push(token);
             }
@@ -86,15 +75,11 @@ impl Lexer {
         Self::set_line_and_column_info_for_eof_token(&source, &mut eof_token);
         tokens.push(eof_token);
 
-        return if has_error {
-            Err(tokens)
-        } else {
-            Ok(tokens)
-        }
+        return Ok(tokens);
     }
 
-    fn read_until_token_found(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, Token> {
-        let mut terminal_symbol = self.unexpected_character.clone();
+    fn read_until_token_found(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, UnexpectedCharacter> {
+        let mut terminal_symbol = self.eof_symbol.clone();
         let mut text_length = 0;
 
         let start_position = *source_index;
@@ -112,25 +97,18 @@ impl Lexer {
         *source_index = end_position;
 
         return if text_length == 0 {
-            let mut position = TokenPosition {
+            let mut unexpected = UnexpectedCharacter { position: TokenPosition {
                 start_position,
                 text_length: 1,
                 line: 0,
                 column: 0,
-            };
+            }, character: source[start_position] };
+
             let mut position_temp_map = HashMap::<usize, &mut TokenPosition>::new();
-            position_temp_map.insert(start_position, &mut position);
+            position_temp_map.insert(start_position, &mut unexpected.position);
             Self::set_line_and_column_info(source, &mut position_temp_map);
 
-            *source_index += 1;
-
-            Err(Token {
-                position,
-                text: String::from(source[start_position]),
-                terminal_symbol,
-                is_eof: false,
-                symbol_id: 0,
-            })
+            Err(unexpected)
         } else {
             let symbol_id = terminal_symbol.symbol_id;
             Ok(Token {
@@ -228,6 +206,12 @@ impl Lexer {
         return source.get(position - back).copied();
     }
 
+}
+
+#[derive(Debug)]
+pub struct UnexpectedCharacter {
+    pub position: TokenPosition,
+    pub character: char
 }
 
 type TokenizerFn = fn (source: &Vec<char>, current_position: usize) -> usize;

@@ -6,7 +6,6 @@
 ### Generate LR(1) parser at compilation time.
 
 ```rust
-// These imports are required
 use bnf_rules::bnf_rules_macro::bnf_rules;
 use bnf_rules::bnf_rules_parser::{*};
 use bnf_rules::bnf_rules_parser::lexer::{*};
@@ -52,16 +51,16 @@ bnf_rules = { git = "https://github.com/bea4dev/bnf_rules" }
 ```
 
 ### Extended BNF
-|           Form           |                  Semantic                  |
-|:------------------------:|:------------------------------------------:|
-|          source          |         An entire of input source.         |
-|          ident           |    A non-terminal symbol named "ident".    |
-|       "something"        |        A terminal symbol for text.         |
-|    fn (function_name)    | A custom tokenizer with user function.[^1] |
-|       { pattern }        |   Zero or more repetitions of "pattern".   |
-|      \[ pattern \]       |             "pattern" or null.             |
-| pattern1 &#124; pattern2 |         "pattern1" or "pattern2".          |
-|     ( patterns... )      |            A group of patterns.            |
+|        Form        |                  Semantic                  |
+|:------------------:|:------------------------------------------:|
+|       source       |          An entire input source.           |
+|     some_ident     |         Non-terminal symbol name.          |
+|        "+"         |         Terminal symbol for text.          |
+| fn (function_name) | A custom tokenizer with user function.[^1] |
+|    { pattern }     |   Zero or more repetitions of "pattern".   |
+|   \[ pattern \]    |             "pattern" or null.             |
+| patt1 &#124; patt2 |            "patt1" or "patt2".             |
+|    ( patterns )    |            A group of patterns.            |
 
 [^1]: Generic parameters are also available.
 

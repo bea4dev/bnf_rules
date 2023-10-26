@@ -1,6 +1,5 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::mem;
-use indexmap::IndexMap;
 use litrs::StringLit;
 use proc_macro2::{Delimiter, TokenTree};
 use syn::Error;
@@ -10,17 +9,17 @@ pub mod lexer;
 pub mod parser;
 
 
-pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<IndexMap<String, BNFRule>, Error> {
+pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, Error> {
 
     let mut non_terminal_symbol_name = String::new();
     let mut buffered_tokens = Vec::<TokenTree>::new();
-    let mut rule_map = IndexMap::<String, BNFRule>::new();
+    let mut rule_map = HashMap::<String, BNFRule>::new();
 
     let mut i = 0;
     let mut token = &tokens[0];
 
     let mut non_duplicate_number = NonDuplicateNumber::new();
-    let mut unnamed_pattern_map = IndexMap::new();
+    let mut unnamed_pattern_map = HashMap::new();
 
     loop {
         buffered_tokens.push(token.clone());
@@ -102,7 +101,7 @@ fn next<'a>(tokens: &'a Vec<TokenTree>, i: &mut usize) -> Result<&'a TokenTree, 
 
 
 
-fn parse_rule(rule_map: &mut IndexMap<String, BNFRule>, non_terminal_symbol_name: &mut String, tokens: &Vec<TokenTree>, non_duplicate_number: &mut NonDuplicateNumber, unnamed_pattern_map: &mut IndexMap<Vec<Vec<BNFSymbol>>, String>) -> Result<(), Error> {
+fn parse_rule(rule_map: &mut HashMap<String, BNFRule>, non_terminal_symbol_name: &mut String, tokens: &Vec<TokenTree>, non_duplicate_number: &mut NonDuplicateNumber, unnamed_pattern_map: &mut HashMap<Vec<Vec<BNFSymbol>>, String>) -> Result<(), Error> {
 
     let mut rule = BNFRule::new(non_terminal_symbol_name.clone());
 
@@ -346,15 +345,15 @@ impl NonDuplicateNumber {
 
 
 pub struct ParserGenerator {
-    rule_map: IndexMap<String, BNFRule>,
+    rule_map: HashMap<String, BNFRule>,
     single_pattern_rules: Vec<SinglePatternRule>,
-    symbol_id_map: IndexMap<BNFSymbol, usize>
+    symbol_id_map: HashMap<BNFSymbol, usize>
 }
 
 
 impl ParserGenerator {
 
-    pub fn new(mut rule_map: IndexMap<String, BNFRule>) -> Self {
+    pub fn new(mut rule_map: HashMap<String, BNFRule>) -> Self {
         let mut source_rule = BNFRule::new(" source".to_string());
         source_rule.or_patterns.push(vec![BNFSymbol::NonTerminalSymbolName("source".to_string())]);
 
@@ -376,7 +375,7 @@ impl ParserGenerator {
             }
         }
 
-        let mut symbol_id_map = IndexMap::<BNFSymbol, usize>::new();
+        let mut symbol_id_map = HashMap::<BNFSymbol, usize>::new();
         let mut last_id = 0;
 
         symbol_id_map.insert(BNFSymbol::EOF, last_id);
@@ -417,7 +416,7 @@ impl ParserGenerator {
 
     fn search_nulls_and_first_set(&mut self) {
 
-        let mut rule_nullable_map = IndexMap::<String, bool>::new();
+        let mut rule_nullable_map = HashMap::<String, bool>::new();
 
         loop {
             let mut retry = false;
@@ -481,7 +480,7 @@ impl ParserGenerator {
             self.rule_map.get_mut(entry.0).unwrap().is_nullable = *entry.1
         }
 
-        let mut rule_first_set_map = IndexMap::<String, HashSet<BNFSymbol>>::new();
+        let mut rule_first_set_map = HashMap::<String, HashSet<BNFSymbol>>::new();
 
         loop {
             let mut retry = false;
@@ -576,7 +575,7 @@ impl ParserGenerator {
 
     fn generate_parser(&self) -> Result<String, String> {
 
-        let mut lr_group_map = IndexMap::<usize, LRGroup>::new();
+        let mut lr_group_map = HashMap::<usize, LRGroup>::new();
         let mut not_scanned_group_list = Vec::<usize>::new();
         let mut last_group_number = 0;
 
@@ -610,7 +609,7 @@ impl ParserGenerator {
 
             let lr_group = lr_group_map.get(&lr_group_number).unwrap();
 
-            let mut next_group_map = IndexMap::<BNFSymbol, Vec<&LRItem>>::new();
+            let mut next_group_map = HashMap::<BNFSymbol, Vec<&LRItem>>::new();
             for item in lr_group.item_list.iter() {
                 match item.get_next_symbol() {
                     Some(symbol) => {
@@ -622,8 +621,8 @@ impl ParserGenerator {
             }
 
 
-            let mut next_group_number_map = IndexMap::<BNFSymbol, usize>::new();
-            let mut add_group_map = IndexMap::<usize, LRGroup>::new();
+            let mut next_group_number_map = HashMap::<BNFSymbol, usize>::new();
+            let mut add_group_map = HashMap::<usize, LRGroup>::new();
 
             for entry in next_group_map.iter() {
                 let symbol = entry.0;
@@ -706,7 +705,7 @@ impl ParserGenerator {
         for group_number in 0..lr_group_map.len() {
 
             let group = lr_group_map.get(&group_number).unwrap();
-            let mut operation_map = IndexMap::<BNFSymbol, Operation>::new();
+            let mut operation_map = HashMap::<BNFSymbol, Operation>::new();
 
             for entry in group.next_group_number_map.iter() {
                 let symbol = entry.0;
@@ -714,13 +713,13 @@ impl ParserGenerator {
 
                 match symbol {
                     BNFSymbol::NonTerminalSymbolName(_) => {
-                        self.insert_operation(&mut operation_map, symbol, Operation::GoTo(next_group_number))?;
+                        self.insert_opreration(&mut operation_map, symbol, Operation::GoTo(next_group_number))?;
                     },
                     BNFSymbol::TerminalSymbolString(_) => {
-                        self.insert_operation(&mut operation_map, symbol, Operation::Shift(next_group_number))?;
+                        self.insert_opreration(&mut operation_map, symbol, Operation::Shift(next_group_number))?;
                     },
                     BNFSymbol::TerminalSymbolFunction(_) => {
-                        self.insert_operation(&mut operation_map, symbol, Operation::Shift(next_group_number))?;
+                        self.insert_opreration(&mut operation_map, symbol, Operation::Shift(next_group_number))?;
                     },
                     _ => {
                         return Err(format!("Unexpected symbol. {:?}", symbol));
@@ -731,11 +730,11 @@ impl ParserGenerator {
             for item in group.item_list.iter() {
                 if item.is_last_position() {
                     if item.root_name == " source" {
-                        self.insert_operation(&mut operation_map, &BNFSymbol::EOF, Operation::Accept)?;
+                        self.insert_opreration(&mut operation_map, &BNFSymbol::EOF, Operation::Accept)?;
                     } else {
                         let pattern_id = self.get_pattern_id(item)?;
                         for symbol in item.first_set.iter() {
-                            self.insert_operation(&mut operation_map, symbol, Operation::Reduce(pattern_id))?;
+                            self.insert_opreration(&mut operation_map, symbol, Operation::Reduce(pattern_id))?;
                         }
                     }
                 }
@@ -805,33 +804,6 @@ impl ParserGenerator {
         code += format!("static lr_table: &[&[(usize, usize)]] = &[{}];", group_array_str).as_str();
 
 
-        let mut group_array_str = String::new();
-        for group in table.iter() {
-            let mut array_str = String::new();
-
-            let mut symbol_id = 0;
-            for operation in group.iter() {
-                match operation {
-                    Some(_) => {
-                        for symbol_entry in self.symbol_id_map.iter() {
-                            if *symbol_entry.1 == symbol_id {
-                                if let BNFSymbol::NonTerminalSymbolName(_) = symbol_entry.0 {
-                                    array_str += format!("{}, ", symbol_id).as_str();
-                                    break;
-                                }
-                            }
-                        }
-                    },
-                    _ => {}
-                }
-                symbol_id += 1;
-            }
-
-            group_array_str += format!("&[{}], ", array_str).as_str();
-        }
-        code += format!("static non_terminal_symbols: &[&[usize]] = &[{}];", group_array_str).as_str();
-
-
         let mut rule_array_str = String::new();
         for pattern in self.single_pattern_rules.iter() {
             let root_symbol_id = self.symbol_id_map[&BNFSymbol::NonTerminalSymbolName(pattern.root_symbol_name.clone())];
@@ -845,21 +817,6 @@ impl ParserGenerator {
         }
 
         code += format!("static bnf_rules: &[(u32, &[u32])] = &[{}];", rule_array_str).as_str();
-
-        let mut first_sets_array_str = String::new();
-        for pattern in self.single_pattern_rules.iter() {
-            let root_symbol_id = self.symbol_id_map[&BNFSymbol::NonTerminalSymbolName(pattern.root_symbol_name.clone())];
-            let first_set = &self.rule_map[&pattern.root_symbol_name].first_set;
-
-            let mut array_str = String::new();
-            for symbol in first_set {
-                array_str += format!("{}, ", self.symbol_id_map[symbol]).as_str();
-            }
-
-            first_sets_array_str += format!("({}, &[{}]), ", root_symbol_id, array_str).as_str();
-        }
-
-        code += format!("static first_sets: &[(u32, &[u32])] = &[{}];", first_sets_array_str).as_str();
 
 
         code += "let mut terminal_symbols = Vec::<TerminalSymbol>::new();";
@@ -881,14 +838,14 @@ impl ParserGenerator {
 
 
         code += "let tokens = lexer.scan(source);";
-        code += "return __parse(tokens, rule_pattern_name, lr_table, bnf_rules, first_sets, non_terminal_symbols);";
+        code += "return __parse(tokens, rule_pattern_name, lr_table, bnf_rules);";
         code += "}";
 
         return Ok(code);
     }
 
 
-    fn insert_operation(&self, operation_map: &mut IndexMap<BNFSymbol, Operation>, symbol: &BNFSymbol, operation: Operation) -> Result<(), String> {
+    fn insert_opreration(&self, operation_map: &mut HashMap<BNFSymbol, Operation>, symbol: &BNFSymbol, operation: Operation) -> Result<(), String> {
         if operation_map.contains_key(symbol) {
             let mut message = format!("{:?} {:?} conflict!", operation_map.get(symbol).unwrap(), operation);
 
@@ -1049,7 +1006,7 @@ pub struct LRGroup {
     pub group_number: usize,
     pub default_item_list: Vec<LRItem>,
     pub item_list: Vec<LRItem>,
-    pub next_group_number_map: IndexMap<BNFSymbol, usize>
+    pub next_group_number_map: HashMap<BNFSymbol, usize>
 }
 
 
@@ -1060,7 +1017,7 @@ impl LRGroup {
             group_number,
             default_item_list: Vec::new(),
             item_list: Vec::new(),
-            next_group_number_map: IndexMap::new()
+            next_group_number_map: HashMap::new()
         }
     }
 

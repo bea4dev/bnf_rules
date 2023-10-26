@@ -9,5 +9,4 @@ proc-macro = true
 [dependencies]
 syn = "1.0"
 quote = "1.0"
-indexmap = "2.0.2"
 bnf_rules_parser = { path = "../bnf_rules_parser" }
