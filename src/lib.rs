@@ -37,6 +37,7 @@ mod tests {
 
     #[test]
     pub fn test() {
+        // A function named "parse_source" is automatically generated.
         let node: ASTNode = parse_source("10 + (200 + -10)").unwrap();
         dbg!(&node);
 

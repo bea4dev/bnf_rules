@@ -3,6 +3,12 @@ name = "bnf_rules"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+members = [
+    "bnf_rules_macro",
+    "bnf_rules_parser"
+]
+
 [dependencies]
 bnf_rules_macro = { path = "bnf_rules_macro", version = "0.1.0" }
 bnf_rules_parser = { path = "bnf_rules_parser", version = "0.1.0" }
