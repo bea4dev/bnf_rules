@@ -39,6 +39,7 @@ fn number_tokenizer(source: &Vec<char>, mut current_position: usize) -> usize {
 
 pub fn parse() {
 
+    // A function named "parse_source" is automatically generated.
     let ast_node: Result<ASTNode, ParseError> = parse_source("(100 + 200) + -100");
     dbg!(ast_node.unwrap());
 
