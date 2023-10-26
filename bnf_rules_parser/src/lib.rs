@@ -146,6 +146,7 @@ fn parse_rule(rule_map: &mut IndexMap<String, BNFRule>, non_terminal_symbol_name
                             return Err(Error::new(next_token.span(), "A function must be specified."));
                         }
                         let func_string = ident_chars[1..(ident_chars.len() - 1)].iter().collect::<String>();
+                        dbg!(&func_string);
                         pattern.push(BNFSymbol::TerminalSymbolFunction(func_string));
 
                         index = next_index;
@@ -568,7 +569,6 @@ impl ParserGenerator {
             let symbol_name = entry.0;
             let first_set = entry.1;
             let rule = self.rule_map.get_mut(symbol_name).unwrap();
-            println!("name = {}, first_set = {:?}", symbol_name, first_set);
             rule.first_set = first_set.clone();
         }
     }
@@ -776,7 +776,7 @@ impl ParserGenerator {
 
         let mut code = "".to_string();
 
-        code += "pub fn parse_source(source: &str) -> Result<ASTNode, IncompleteAST> {";
+        code += "pub fn parse_source(source: &str) -> Result<ASTNode, ParseError> {";
 
 
         let mut array_str = String::new();
@@ -850,15 +850,11 @@ impl ParserGenerator {
         for pattern in self.single_pattern_rules.iter() {
             let root_symbol_id = self.symbol_id_map[&BNFSymbol::NonTerminalSymbolName(pattern.root_symbol_name.clone())];
             let first_set = &self.rule_map[&pattern.root_symbol_name].first_set;
-            dbg!(&pattern.root_symbol_name);
-            dbg!(root_symbol_id);
-            dbg!(first_set);
 
             let mut array_str = String::new();
             for symbol in first_set {
                 array_str += format!("{}, ", self.symbol_id_map[symbol]).as_str();
             }
-            dbg!(&array_str);
 
             first_sets_array_str += format!("({}, &[{}]), ", root_symbol_id, array_str).as_str();
         }
