@@ -781,7 +781,7 @@ impl ParserGenerator {
         for rule_root_name in self.single_pattern_rules.iter() {
             array_str += format!("\"{}\", ", &rule_root_name.root_symbol_name).as_str();
         }
-        code += format!("static rule_pattern_name: &[&str] = &[{}];", array_str).as_str();
+        code += format!("static RULE_PATTERN_NAME: &[&str] = &[{}];", array_str).as_str();
 
 
         let mut group_array_str = String::new();
@@ -800,7 +800,7 @@ impl ParserGenerator {
 
             group_array_str += format!("&[{}], ", array_str).as_str();
         }
-        code += format!("static lr_table: &[&[(usize, usize)]] = &[{}];", group_array_str).as_str();
+        code += format!("static LR_TABLE: &[&[(usize, usize)]] = &[{}];", group_array_str).as_str();
 
 
         let mut rule_array_str = String::new();
@@ -815,7 +815,7 @@ impl ParserGenerator {
             rule_array_str += format!("({}, &[{}]), ", root_symbol_id, array_str).as_str();
         }
 
-        code += format!("static bnf_rules: &[(u32, &[u32])] = &[{}];", rule_array_str).as_str();
+        code += format!("static BNF_RULES: &[(u32, &[u32])] = &[{}];", rule_array_str).as_str();
 
 
         code += "let mut terminal_symbols = Vec::<TerminalSymbol>::new();";
@@ -837,7 +837,7 @@ impl ParserGenerator {
 
 
         code += "let tokens = lexer.scan(source);";
-        code += "return __parse(tokens, rule_pattern_name, lr_table, bnf_rules);";
+        code += "return __parse(tokens, RULE_PATTERN_NAME, LR_TABLE, BNF_RULES);";
         code += "}";
 
         return Ok(code);
