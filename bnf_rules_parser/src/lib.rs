@@ -145,7 +145,6 @@ fn parse_rule(rule_map: &mut HashMap<String, BNFRule>, non_terminal_symbol_name:
                             return Err(Error::new(next_token.span(), "A function must be specified."));
                         }
                         let func_string = ident_chars[1..(ident_chars.len() - 1)].iter().collect::<String>();
-                        dbg!(&func_string);
                         pattern.push(BNFSymbol::TerminalSymbolFunction(func_string));
 
                         index = next_index;
