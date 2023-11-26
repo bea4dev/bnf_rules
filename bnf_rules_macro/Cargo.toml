@@ -2,6 +2,9 @@
 name = "bnf_rules_macro"
 version = "0.1.1"
 edition = "2021"
+repository = "https://github.com/bea4dev/bnf_rules"
+description = "LR(1) parser generator"
+license = "MIT"
 
 [lib]
 proc-macro = true
