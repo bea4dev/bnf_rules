@@ -8,7 +8,7 @@
 ```rust
 use bnf_rules::bnf_rules_macro::bnf_rules;
 
-// Grammer
+// Grammar
 bnf_rules!(
     source   ::= expr
     expr     ::= factor { "+" factor }
@@ -45,7 +45,7 @@ pub fn parse() {
 
 ### Usage
 ```toml
-bnf_rules = { git = "https://github.com/bea4dev/bnf_rules" }
+bnf_rules = "0.1.2"
 ```
 
 ### Extended BNF
