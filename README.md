@@ -7,9 +7,6 @@
 
 ```rust
 use bnf_rules::bnf_rules_macro::bnf_rules;
-use bnf_rules::bnf_rules_parser::{*};
-use bnf_rules::bnf_rules_parser::lexer::{*};
-use bnf_rules::bnf_rules_parser::parser::{*};
 
 // Grammer
 bnf_rules!(

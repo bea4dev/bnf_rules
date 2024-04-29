@@ -773,6 +773,11 @@ impl ParserGenerator {
         }
 
         let mut code = "".to_string();
+        code += "
+        use bnf_rules::bnf_rules_parser::lexer::{*};
+        use bnf_rules::bnf_rules_parser::parser::{*};
+        use bnf_rules::bnf_rules_parser::parser::ASTNode::{NonTerminal, Terminal};
+        ";
 
         code += "pub fn parse_source(source: &str) -> Result<ASTNode, ParseError> {";
 

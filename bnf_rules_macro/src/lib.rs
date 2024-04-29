@@ -7,13 +7,8 @@ use syn::parse_macro_input;
 ///
 /// # Examples
 ///
-/// ```
-/// use bnf_rules::bnf_rules_macro::bnf_rules;
-/// use bnf_rules::bnf_rules_parser::{*};
-/// use bnf_rules::bnf_rules_parser::lexer::{*};
-/// use bnf_rules::bnf_rules_parser::parser::{*};
-/// 
-/// // Grammer 
+/// ``` 
+/// // Grammar 
 /// bnf_rules!(
 ///     source   ::= expr
 ///     expr     ::= factor { "+" factor }
