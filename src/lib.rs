@@ -1,4 +1,3 @@
-
 pub extern crate bnf_rules_macro;
 pub extern crate bnf_rules_parser;
 

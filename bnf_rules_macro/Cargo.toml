@@ -1,6 +1,6 @@
 [package]
 name = "bnf_rules_macro"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 repository = "https://github.com/bea4dev/bnf_rules"
 description = "LR(1) parser generator"
@@ -12,4 +12,4 @@ proc-macro = true
 [dependencies]
 syn = "1.0"
 quote = "1.0"
-bnf_rules_parser = { path = "../bnf_rules_parser", version = "0.1.0" }
+bnf_rules_parser = { path = "../bnf_rules_parser", version = "0.1.2" }
