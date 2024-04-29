@@ -8,6 +8,8 @@ use syn::parse_macro_input;
 /// # Examples
 ///
 /// ``` 
+/// use bnf_rules::bnf_rules_macro::bnf_rules;
+/// 
 /// // Grammar 
 /// bnf_rules!(
 ///     source   ::= expr

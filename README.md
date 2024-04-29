@@ -62,4 +62,6 @@ bnf_rules = "0.1.2"
 
 [^1]: Generic parameters are also available.
 
-> Example: https://github.com/bea4dev/bnf_rules/blob/master/src/lib.rs
+> Example 1: https://github.com/bea4dev/bnf_rules/blob/master/src/lib.rs
+
+> Example 2: https://github.com/bea4dev/catla/blob/master/catla_parser/src/grammar.rs
