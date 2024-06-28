@@ -10,6 +10,8 @@ mod tests {
     }
 
     crate::bnf_rules_macro::bnf_rules!(
+        #[generate_code = true]
+
         source   ::= [ expr ]
         expr     ::= factor { "+" factor }
         factor   ::= "-" primary | primary

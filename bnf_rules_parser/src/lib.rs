@@ -9,7 +9,7 @@ pub mod lexer;
 pub mod parser;
 
 
-pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, Error> {
+pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<(HashMap<String, BNFRule>, bool), Error> {
 
     let mut non_terminal_symbol_name = String::new();
     let mut buffered_tokens = Vec::<TokenTree>::new();
@@ -21,10 +21,42 @@ pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, 
     let mut non_duplicate_number = NonDuplicateNumber::new();
     let mut unnamed_pattern_map = HashMap::new();
 
+    let mut generate_code = true;
+    if let TokenTree::Punct(punctuation) = tokens.first().unwrap() {
+        if punctuation.as_char() != '#' {
+            return Err(Error::new(token.span(), "Invalid syntax."));
+        }
+
+        if let TokenTree::Group(group) = next(tokens, &mut i)? {
+            if group.delimiter() != Delimiter::Bracket {
+                return Err(Error::new(token.span(), "Invalid syntax."));
+            }
+
+            let mut i = 0;
+            let tokens = group.stream().into_iter().collect::<Vec<_>>();
+
+            check_current_identifier(&tokens, &mut i, "generate_code")?;
+            check_next_punct(&tokens, &mut i, '=')?;
+
+            if let TokenTree::Ident(identifier) = next(&tokens, &mut i)? {
+                generate_code = match identifier.to_string().as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => return Err(Error::new(token.span(), "Invalid syntax."))
+                }
+            }
+        }
+
+        i += 1;
+        token = &tokens[i];
+    }
+
+    let mut is_first_rule_token = true;
+
     loop {
         buffered_tokens.push(token.clone());
 
-        if i == 0 {
+        if is_first_rule_token {
             buffered_tokens.pop();
 
             non_terminal_symbol_name = match token {
@@ -62,6 +94,8 @@ pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, 
             }
         }
 
+        is_first_rule_token = false;
+
 
         if i + 1 == tokens.len() {
             buffered_tokens.push(token.clone());
@@ -70,7 +104,7 @@ pub fn parse_rules(tokens: &Vec<TokenTree>) -> Result<HashMap<String, BNFRule>, 
         }
     }
 
-    return Ok(rule_map);
+    return Ok((rule_map, generate_code));
 }
 
 
@@ -80,19 +114,41 @@ fn check_next_punct(tokens: &Vec<TokenTree>, i: &mut usize, char: char) -> Resul
 
     return match token {
         TokenTree::Punct(punct) => {
-            if punct.as_char() != char {
-                Err(Error::new(punct.span(), "Invalid syntax."))
-            } else {
+            if punct.as_char() == char {
                 Ok(())
+            } else {
+                Err(Error::new(punct.span(), "Invalid syntax."))
             }
         },
         _ => Err(Error::new(token.span(), "Invalid syntax."))
     };
 }
 
+fn check_current_identifier(tokens: &Vec<TokenTree>, i: &mut usize, identifier_str: &str) -> Result<(), Error> {
+    let token = current(tokens, i)?;
+
+    return match token {
+        TokenTree::Ident(identifier) => {
+            if identifier.to_string().as_str() == identifier_str {
+                Ok(())
+            } else {
+                Err(Error::new(identifier.span(), format!("Invalid syntax.{}", identifier.to_string())))
+            }
+        },
+        _ => Err(Error::new(token.span(), "Invalid syntax.1"))
+    };
+}
+
 
 fn next<'a>(tokens: &'a Vec<TokenTree>, i: &mut usize) -> Result<&'a TokenTree, Error> {
     *i += 1;
+    if *i == tokens.len() {
+        return Err(Error::new(tokens[tokens.len() - 1].span(), "Unexpected EOF."));
+    }
+    return Ok(&tokens[*i]);
+}
+
+fn current<'a>(tokens: &'a Vec<TokenTree>, i: &usize) -> Result<&'a TokenTree, Error> {
     if *i == tokens.len() {
         return Err(Error::new(tokens[tokens.len() - 1].span(), "Unexpected EOF."));
     }
@@ -407,9 +463,9 @@ impl ParserGenerator {
     }
 
 
-    pub fn generate(&mut self) -> Result<String, String> {
+    pub fn generate(&mut self, generate_code: bool) -> Result<String, String> {
         self.search_nulls_and_first_set();
-        return Ok(self.generate_parser()?);
+        return Ok(self.generate_parser(generate_code)?);
     }
 
 
@@ -572,7 +628,7 @@ impl ParserGenerator {
     }
 
 
-    fn generate_parser(&self) -> Result<String, String> {
+    fn generate_parser(&self, generate_code: bool) -> Result<String, String> {
 
         let mut lr_group_map = HashMap::<usize, LRGroup>::new();
         let mut not_scanned_group_list = Vec::<usize>::new();
@@ -753,6 +809,9 @@ impl ParserGenerator {
             table.push(operations);
         }
 
+        if !generate_code {
+            return Ok(String::new());
+        }
 
         let mut right_side_counts = Vec::<usize>::new();
         let mut left_side_symbol_ids = Vec::<usize>::new();
@@ -823,21 +882,22 @@ impl ParserGenerator {
         code += format!("static BNF_RULES: &[(u32, &[u32])] = &[{}];", rule_array_str).as_str();
 
 
-        code += "let mut terminal_symbols = Vec::<TerminalSymbol>::new();";
+        code += "let terminal_symbols = vec![";
         for entry in self.symbol_id_map.iter() {
             let symbol = entry.0;
             let symbol_id = entry.1;
 
             match symbol {
                 BNFSymbol::TerminalSymbolString(string) => {
-                    code += format!("terminal_symbols.push(TerminalSymbol::new_from_string(\"{}\", {}));", string, symbol_id).as_str();
+                    code += format!("TerminalSymbol::new_from_string(\"{}\", {}),", string, symbol_id).as_str();
                 },
                 BNFSymbol::TerminalSymbolFunction(fn_string) => {
-                    code += format!("terminal_symbols.push(TerminalSymbol::new_from_tokenizer_fn({}, {}));", fn_string, symbol_id).as_str();
+                    code += format!("TerminalSymbol::new_from_tokenizer_fn({}, {}),", fn_string, symbol_id).as_str();
                 }
                 _ => {}
             }
         }
+        code += "];";
         code += "let lexer = Lexer::new(terminal_symbols);";
 
 

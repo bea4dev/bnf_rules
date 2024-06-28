@@ -12,6 +12,10 @@ use syn::parse_macro_input;
 /// 
 /// // Grammar 
 /// bnf_rules!(
+///     // If it specified false, it will only check whether the grammar contains ambiguity, with no generated code.
+///     // This setting is optional.
+///     #[generate_code = true]
+/// 
 ///     source   ::= expr
 ///     expr     ::= factor { "+" factor }
 ///     factor   ::= "-" primary | primary
@@ -49,8 +53,8 @@ pub fn bnf_rules(input: TokenStream) -> TokenStream {
     let token_parser = parse_macro_input!(input as TokenParser);
     let tokens = &token_parser.symbols;
 
-    let map = parse_rules(tokens).unwrap();
+    let (map, generate_code) = parse_rules(tokens).unwrap();
 
     let mut generator = ParserGenerator::new(map);
-    return generator.generate().unwrap().parse().unwrap();
+    return generator.generate(generate_code).unwrap().parse().unwrap();
 }
