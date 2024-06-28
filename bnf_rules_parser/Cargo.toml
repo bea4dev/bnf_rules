@@ -1,6 +1,6 @@
 [package]
 name = "bnf_rules_parser"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 repository = "https://github.com/bea4dev/bnf_rules"
 description = "LR(1) parser generator"
