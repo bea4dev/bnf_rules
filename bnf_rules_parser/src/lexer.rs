@@ -1,26 +1,21 @@
+use either::Either;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::rc::Rc;
-use either::Either;
-
-
 
 pub struct Lexer {
     terminal_symbols: Vec<Rc<TerminalSymbol>>,
-    eof_symbol: Rc<TerminalSymbol>
+    eof_symbol: Rc<TerminalSymbol>,
 }
 
-
-
 impl Lexer {
-
     pub fn new(mut terminal_symbols: Vec<TerminalSymbol>) -> Self {
         fn blank_tokenizer(source: &Vec<char>, mut current_position: usize) -> usize {
             let mut iteration_count = 0;
             loop {
                 let current_char = match source.get(current_position) {
                     Some(ch) => ch,
-                    _ => break
+                    _ => break,
                 };
                 let chars = ['\t', ' ', '　'];
                 if !chars.contains(&current_char) {
@@ -31,7 +26,10 @@ impl Lexer {
             }
             return iteration_count;
         }
-        terminal_symbols.push(TerminalSymbol::new_from_tokenizer_fn(blank_tokenizer, u32::MAX));
+        terminal_symbols.push(TerminalSymbol::new_from_tokenizer_fn(
+            blank_tokenizer,
+            u32::MAX,
+        ));
 
         let mut symbols = Vec::new();
         for symbol in terminal_symbols {
@@ -40,12 +38,11 @@ impl Lexer {
 
         return Self {
             terminal_symbols: symbols,
-            eof_symbol: Rc::new(TerminalSymbol::new_from_string("EOF", 0))
+            eof_symbol: Rc::new(TerminalSymbol::new_from_string("EOF", 0)),
         };
     }
 
     pub fn scan(&self, source: &str) -> Result<Vec<Token>, UnexpectedCharacter> {
-
         let source = source.chars().collect::<Vec<char>>();
         let source_length = source.len();
 
@@ -78,7 +75,11 @@ impl Lexer {
         return Ok(tokens);
     }
 
-    fn read_until_token_found(&self, source: &Vec<char>, source_index: &mut usize) -> Result<Token, UnexpectedCharacter> {
+    fn read_until_token_found(
+        &self,
+        source: &Vec<char>,
+        source_index: &mut usize,
+    ) -> Result<Token, UnexpectedCharacter> {
         let mut terminal_symbol = self.eof_symbol.clone();
         let mut text_length = 0;
 
@@ -92,17 +93,22 @@ impl Lexer {
         }
 
         let end_position = start_position + text_length;
-        let token_text = source[start_position..end_position].iter().collect::<String>();
+        let token_text = source[start_position..end_position]
+            .iter()
+            .collect::<String>();
 
         *source_index = end_position;
 
         return if text_length == 0 {
-            let mut unexpected = UnexpectedCharacter { position: TokenPosition {
-                start_position,
-                text_length: 1,
-                line: 0,
-                column: 0,
-            }, character: source[start_position] };
+            let mut unexpected = UnexpectedCharacter {
+                position: TokenPosition {
+                    start_position,
+                    text_length: 1,
+                    line: 0,
+                    column: 0,
+                },
+                character: source[start_position],
+            };
 
             let mut position_temp_map = HashMap::<usize, &mut TokenPosition>::new();
             position_temp_map.insert(start_position, &mut unexpected.position);
@@ -123,9 +129,8 @@ impl Lexer {
                 is_eof: false,
                 symbol_id,
             })
-        }
+        };
     }
-
 
     fn set_line_and_column_info_for_tokens(source: &Vec<char>, tokens: &mut Vec<Token>) {
         let mut position_map = HashMap::<usize, &mut TokenPosition>::new();
@@ -141,7 +146,10 @@ impl Lexer {
         Self::set_line_and_column_info(source, &mut position_map);
     }
 
-    fn set_line_and_column_info(source: &Vec<char>, position_map: &mut HashMap<usize, &mut TokenPosition>) {
+    fn set_line_and_column_info(
+        source: &Vec<char>,
+        position_map: &mut HashMap<usize, &mut TokenPosition>,
+    ) {
         let mut i = 0;
         let mut line = 1;
         let mut column = 1;
@@ -155,7 +163,7 @@ impl Lexer {
                 Some(position) => {
                     position.line = line;
                     position.column = column;
-                },
+                }
                 _ => {}
             }
 
@@ -170,7 +178,7 @@ impl Lexer {
                             //for LF
                             true
                         }
-                    },
+                    }
                     _ => {
                         //for LF
                         true
@@ -193,11 +201,10 @@ impl Lexer {
             column += 1;
 
             if i == source.len() {
-                break
+                break;
             }
         }
     }
-
 
     fn read_back(source: &Vec<char>, position: usize, back: usize) -> Option<char> {
         if position < back {
@@ -205,49 +212,45 @@ impl Lexer {
         }
         return source.get(position - back).copied();
     }
-
 }
 
 #[derive(Debug)]
 pub struct UnexpectedCharacter {
     pub position: TokenPosition,
-    pub character: char
+    pub character: char,
 }
 
-type TokenizerFn = fn (source: &Vec<char>, current_position: usize) -> usize;
+type TokenizerFn = fn(source: &Vec<char>, current_position: usize) -> usize;
 
 #[derive(Debug)]
 pub struct TerminalSymbol {
     judgement: Either<TokenizerFn, Vec<char>>,
-    symbol_id: u32
+    symbol_id: u32,
 }
 
 impl TerminalSymbol {
-
     pub fn new_from_tokenizer_fn(tokenizer: TokenizerFn, symbol_id: u32) -> Self {
         return Self {
             judgement: Either::Left(tokenizer),
-            symbol_id
+            symbol_id,
         };
     }
 
     pub fn new_from_string(judge_str: &str, symbol_id: u32) -> Self {
         return Self {
             judgement: Either::Right(judge_str.chars().collect::<Vec<char>>()),
-            symbol_id
+            symbol_id,
         };
     }
 
     pub fn tokenize(&self, source: &Vec<char>, current_position: usize) -> usize {
         return match &self.judgement {
-            Either::Left(tokenizer_fn) => {
-                tokenizer_fn(source, current_position)
-            }
+            Either::Left(tokenizer_fn) => tokenizer_fn(source, current_position),
             Either::Right(string) => {
                 for i in 0..string.len() {
                     let current_char = match source.get(current_position + i) {
                         Some(ch) => ch.clone(),
-                        _ => return 0 // reject
+                        _ => return 0, // reject
                     };
                     if current_char != string[i] {
                         return 0; // reject
@@ -255,13 +258,9 @@ impl TerminalSymbol {
                 }
                 string.len() // accept
             }
-        }
+        };
     }
-
 }
-
-
-
 
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -269,20 +268,23 @@ pub struct Token {
     pub text: String,
     pub terminal_symbol: Rc<TerminalSymbol>,
     pub is_eof: bool,
-    pub symbol_id: u32
+    pub symbol_id: u32,
 }
 
-
 impl Token {
-
-    pub fn new(position: TokenPosition, text: String, terminal_symbol: Rc<TerminalSymbol>, symbol_id: u32) -> Self {
+    pub fn new(
+        position: TokenPosition,
+        text: String,
+        terminal_symbol: Rc<TerminalSymbol>,
+        symbol_id: u32,
+    ) -> Self {
         return Self {
             position,
             text,
             terminal_symbol,
             is_eof: false,
-            symbol_id
-        }
+            symbol_id,
+        };
     }
 
     pub fn new_eof(position: TokenPosition, terminal_symbol: Rc<TerminalSymbol>) -> Self {
@@ -291,31 +293,27 @@ impl Token {
             text: String::new(),
             terminal_symbol,
             is_eof: true,
-            symbol_id: 0
-        }
+            symbol_id: 0,
+        };
     }
-
 }
-
 
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub struct TokenPosition {
     pub start_position: usize,
     pub text_length: usize,
     pub line: usize,
-    pub column: usize
+    pub column: usize,
 }
 
-
 impl TokenPosition {
-
     pub fn new(start_position: usize, text_length: usize, line: usize, column: usize) -> Self {
         return Self {
             start_position,
             text_length,
             line,
-            column
-        }
+            column,
+        };
     }
 
     pub fn marge_start_position() -> Self {
@@ -323,8 +321,8 @@ impl TokenPosition {
             start_position: usize::MAX,
             text_length: 0,
             line: usize::MAX,
-            column: usize::MAX
-        }
+            column: usize::MAX,
+        };
     }
 
     pub fn marge(&mut self, other_token_position: &TokenPosition) {
@@ -335,7 +333,8 @@ impl TokenPosition {
                 self.text_length
             } else {
                 if self.start_position < other_token_position.start_position {
-                    (other_token_position.start_position - self.start_position) + other_token_position.text_length
+                    (other_token_position.start_position - self.start_position)
+                        + other_token_position.text_length
                 } else {
                     (self.start_position - other_token_position.start_position) + self.text_length
                 }
@@ -346,7 +345,4 @@ impl TokenPosition {
         self.line = min(self.line, other_token_position.line);
         self.column = min(self.column, other_token_position.column);
     }
-
 }
-
-

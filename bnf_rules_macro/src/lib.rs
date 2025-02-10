@@ -1,5 +1,5 @@
-use proc_macro::TokenStream;
 use bnf_rules_parser::{parse_rules, ParserGenerator, TokenParser};
+use proc_macro::TokenStream;
 use syn::parse_macro_input;
 
 /// Generate LR(1) parser at compilation time.<br>
@@ -7,22 +7,22 @@ use syn::parse_macro_input;
 ///
 /// # Examples
 ///
-/// ``` 
+/// ```
 /// use bnf_rules::bnf_rules_macro::bnf_rules;
-/// 
-/// // Grammar 
+///
+/// // Grammar
 /// bnf_rules!(
 ///     // If it specified false, it will only check whether the grammar contains ambiguity, with no generated code.
 ///     // This setting is optional.
 ///     #[generate_code = true]
-/// 
+///
 ///     source   ::= expr
 ///     expr     ::= factor { "+" factor }
 ///     factor   ::= "-" primary | primary
 ///     primary  ::= "(" expr ")" | number
 ///     number   ::= fn (number_tokenizer) // custom tokenizer with function
 /// );
-/// 
+///
 /// /// Custom tokenizer for numeric literal
 /// fn number_tokenizer(source: &Vec<char>, mut current_position: usize) -> usize {
 ///     let mut iteration_count = 0;
@@ -39,13 +39,13 @@ use syn::parse_macro_input;
 ///     }
 ///     return iteration_count; // 0 means 'rejected', other means 'accepted' and 'length of token'.
 /// }
-/// 
+///
 /// pub fn parse() {
-/// 
+///
 ///     // A function named "parse_source" is automatically generated.
 ///     let ast_node: Result<ASTNode, ParseError> = parse_source("(100 + 200) + -100");
 ///     dbg!(ast_node.unwrap());
-/// 
+///
 /// }
 /// ```
 #[proc_macro]
@@ -58,3 +58,4 @@ pub fn bnf_rules(input: TokenStream) -> TokenStream {
     let mut generator = ParserGenerator::new(map);
     return generator.generate(generate_code).unwrap().parse().unwrap();
 }
+
