@@ -20,25 +20,8 @@ use syn::parse_macro_input;
 ///     expr     ::= factor { "+" factor }
 ///     factor   ::= "-" primary | primary
 ///     primary  ::= "(" expr ")" | number
-///     number   ::= fn (number_tokenizer) // custom tokenizer with function
+///     number   ::= r"\d+" // regex
 /// );
-///
-/// /// Custom tokenizer for numeric literal
-/// fn number_tokenizer(source: &Vec<char>, mut current_position: usize) -> usize {
-///     let mut iteration_count = 0;
-///     loop {
-///         let current_char = match source.get(current_position) {
-///             Some(ch) => ch.clone(),
-///             _ => break
-///         };
-///         if !current_char.is_numeric() {
-///             break;
-///         }
-///         iteration_count += 1;
-///         current_position += 1;
-///     }
-///     return iteration_count; // 0 means 'rejected', other means 'accepted' and 'length of token'.
-/// }
 ///
 /// pub fn parse() {
 ///
@@ -58,4 +41,3 @@ pub fn bnf_rules(input: TokenStream) -> TokenStream {
     let mut generator = ParserGenerator::new(map);
     return generator.generate(generate_code).unwrap().parse().unwrap();
 }
-

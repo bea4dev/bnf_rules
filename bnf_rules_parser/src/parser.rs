@@ -212,7 +212,7 @@ pub fn __parse(
                         Either::Left(token) => {
                             let node = ASTNode::Terminal {
                                 internal_symbol_id: Some(symbol_id),
-                                text: token.text.clone(),
+                                text: token.text.to_string(),
                                 position: token.position.clone(),
                             };
                             position.marge(&node.get_position());
@@ -360,7 +360,9 @@ fn get_stack_last(stack: &Vec<usize>, tokens: &Vec<Token>) -> Result<usize, Pars
     };
 }
 
-fn get_tokens_last(tokens: &Vec<Token>) -> Result<&Token, ParseError> {
+fn get_tokens_last<'input, 'a>(
+    tokens: &'a Vec<Token<'input>>,
+) -> Result<&'a Token<'input>, ParseError> {
     return match tokens.last() {
         Some(last) => Ok(last),
         _ => {
@@ -373,7 +375,7 @@ fn get_tokens_last(tokens: &Vec<Token>) -> Result<&Token, ParseError> {
     };
 }
 
-fn pop_token(tokens: &mut Vec<Token>) -> Result<Token, ParseError> {
+fn pop_token<'input, 'a>(tokens: &'a mut Vec<Token<'input>>) -> Result<Token<'input>, ParseError> {
     return match tokens.pop() {
         Some(last) => Ok(last),
         _ => {

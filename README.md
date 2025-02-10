@@ -14,25 +14,8 @@ bnf_rules!(
     expr     ::= factor { "+" factor }
     factor   ::= "-" primary | primary
     primary  ::= "(" expr ")" | number
-    number   ::= fn (number_tokenizer) // custom tokenizer with function
+    number   ::= r"\d+" // regex
 );
-
-/// Custom tokenizer for numeric literal
-fn number_tokenizer(source: &Vec<char>, mut current_position: usize) -> usize {
-    let mut iteration_count = 0;
-    loop {
-        let current_char = match source.get(current_position) {
-            Some(ch) => ch.clone(),
-            _ => break
-        };
-        if !current_char.is_numeric() {
-            break;
-        }
-        iteration_count += 1;
-        current_position += 1;
-    }
-    return iteration_count; // 0 means 'rejected', other means 'accepted' and 'length of token'.
-}
 
 pub fn parse() {
 
@@ -45,7 +28,7 @@ pub fn parse() {
 
 ### Usage
 ```toml
-bnf_rules = "0.1.4"
+bnf_rules = "0.1.5"
 ```
 
 ### Extended BNF
@@ -54,6 +37,7 @@ bnf_rules = "0.1.4"
 |          source          |          An entire input source.           |
 |          ident           |    A non-terminal symbol named "ident".    |
 |       "something"        |        A terminal symbol for text.         |
+|          r"\d+"          |       A terminal symbol for regex.         |
 |    fn (function_name)    | A custom tokenizer with user function.[^1] |
 |       { pattern }        |   Zero or more repetitions of "pattern".   |
 |      \[ pattern \]       |             "pattern" or null.             |

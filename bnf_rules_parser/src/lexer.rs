@@ -1,4 +1,4 @@
-use either::Either;
+use regex::Regex;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -10,26 +10,7 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(mut terminal_symbols: Vec<TerminalSymbol>) -> Self {
-        fn blank_tokenizer(source: &Vec<char>, mut current_position: usize) -> usize {
-            let mut iteration_count = 0;
-            loop {
-                let current_char = match source.get(current_position) {
-                    Some(ch) => ch,
-                    _ => break,
-                };
-                let chars = ['\t', ' ', '　'];
-                if !chars.contains(&current_char) {
-                    break;
-                }
-                iteration_count += 1;
-                current_position += 1;
-            }
-            return iteration_count;
-        }
-        terminal_symbols.push(TerminalSymbol::new_from_tokenizer_fn(
-            blank_tokenizer,
-            u32::MAX,
-        ));
+        terminal_symbols.push(TerminalSymbol::new_from_regex(r"[ 　/t]+", u32::MAX));
 
         let mut symbols = Vec::new();
         for symbol in terminal_symbols {
@@ -42,8 +23,10 @@ impl Lexer {
         };
     }
 
-    pub fn scan(&self, source: &str) -> Result<Vec<Token>, UnexpectedCharacter> {
-        let source = source.chars().collect::<Vec<char>>();
+    pub fn scan<'input>(
+        &self,
+        source: &'input str,
+    ) -> Result<Vec<Token<'input>>, UnexpectedCharacter> {
         let source_length = source.len();
 
         if source_length == 0 {
@@ -52,15 +35,28 @@ impl Lexer {
         }
 
         let mut tokens = Vec::<Token>::new();
-        let mut source_index = 0;
+        let mut current_byte_position = 0;
 
         loop {
-            let token = self.read_until_token_found(&source, &mut source_index)?;
+            let token = match self.read_until_token_found(
+                &source[current_byte_position..],
+                &mut current_byte_position,
+            ) {
+                Ok(token) => token,
+                Err(mut unexpected) => {
+                    let mut position_map = HashMap::new();
+                    position_map
+                        .insert(unexpected.position.start_position, &mut unexpected.position);
+                    Self::set_line_and_column_info(source, &mut position_map);
+
+                    return Err(unexpected);
+                }
+            };
             if token.symbol_id != u32::MAX {
                 tokens.push(token);
             }
 
-            if source_index == source.len() {
+            if current_byte_position == source.len() {
                 break;
             }
         }
@@ -75,46 +71,38 @@ impl Lexer {
         return Ok(tokens);
     }
 
-    fn read_until_token_found(
+    fn read_until_token_found<'input>(
         &self,
-        source: &Vec<char>,
-        source_index: &mut usize,
-    ) -> Result<Token, UnexpectedCharacter> {
+        current_input: &'input str,
+        current_byte_position: &mut usize,
+    ) -> Result<Token<'input>, UnexpectedCharacter> {
         let mut terminal_symbol = self.eof_symbol.clone();
         let mut text_length = 0;
 
-        let start_position = *source_index;
+        let start_position = *current_byte_position;
+
         for symbol in self.terminal_symbols.iter() {
-            let length = symbol.tokenize(source, start_position);
+            let length = symbol.tokenize(current_input);
             if length > text_length {
                 terminal_symbol = symbol.clone();
                 text_length = length;
             }
         }
 
-        let end_position = start_position + text_length;
-        let token_text = source[start_position..end_position]
-            .iter()
-            .collect::<String>();
+        let token_text = &current_input[..text_length];
 
-        *source_index = end_position;
+        *current_byte_position += text_length;
 
-        return if text_length == 0 {
-            let mut unexpected = UnexpectedCharacter {
+        if text_length == 0 {
+            Err(UnexpectedCharacter {
                 position: TokenPosition {
                     start_position,
                     text_length: 1,
                     line: 0,
                     column: 0,
                 },
-                character: source[start_position],
-            };
-
-            let mut position_temp_map = HashMap::<usize, &mut TokenPosition>::new();
-            position_temp_map.insert(start_position, &mut unexpected.position);
-            Self::set_line_and_column_info(source, &mut position_temp_map);
-
-            Err(unexpected)
+                character: current_input.chars().next().unwrap(),
+            })
         } else {
             let symbol_id = terminal_symbol.symbol_id;
             Ok(Token {
@@ -129,37 +117,43 @@ impl Lexer {
                 is_eof: false,
                 symbol_id,
             })
-        };
+        }
     }
 
-    fn set_line_and_column_info_for_tokens(source: &Vec<char>, tokens: &mut Vec<Token>) {
+    fn set_line_and_column_info_for_tokens(input: &str, tokens: &mut Vec<Token>) {
         let mut position_map = HashMap::<usize, &mut TokenPosition>::new();
         for token in tokens.iter_mut() {
             position_map.insert(token.position.start_position, &mut token.position);
         }
-        Self::set_line_and_column_info(source, &mut position_map);
+        Self::set_line_and_column_info(input, &mut position_map);
     }
 
-    fn set_line_and_column_info_for_eof_token(source: &Vec<char>, token: &mut Token) {
+    fn set_line_and_column_info_for_eof_token(input: &str, token: &mut Token) {
         let mut position_map = HashMap::<usize, &mut TokenPosition>::new();
         position_map.insert(token.position.start_position, &mut token.position);
-        Self::set_line_and_column_info(source, &mut position_map);
+        Self::set_line_and_column_info(input, &mut position_map);
     }
 
     fn set_line_and_column_info(
-        source: &Vec<char>,
+        input: &str,
         position_map: &mut HashMap<usize, &mut TokenPosition>,
     ) {
-        let mut i = 0;
         let mut line = 1;
         let mut column = 1;
+        let mut byte_position = 0;
 
         let mut previous_column = column;
+        let mut previous_char: Option<char> = None;
+
+        let mut input_chars = input.chars();
 
         loop {
-            let char = source[i];
+            let char = match input_chars.next() {
+                Some(char) => char,
+                None => break,
+            };
 
-            match position_map.get_mut(&i) {
+            match position_map.get_mut(&byte_position) {
                 Some(position) => {
                     position.line = line;
                     position.column = column;
@@ -168,7 +162,7 @@ impl Lexer {
             }
 
             let line_feed = if char == '\n' {
-                match Lexer::read_back(source, i, 1) {
+                match previous_char {
                     Some(previous_char) => {
                         if previous_char == '\r' {
                             //for CRLF
@@ -197,20 +191,12 @@ impl Lexer {
                 column = 0;
             }
 
-            i += 1;
+            previous_char = Some(char);
+
+            byte_position += char.len_utf8();
+
             column += 1;
-
-            if i == source.len() {
-                break;
-            }
         }
-    }
-
-    fn read_back(source: &Vec<char>, position: usize, back: usize) -> Option<char> {
-        if position < back {
-            return None;
-        }
-        return source.get(position - back).copied();
     }
 }
 
@@ -220,61 +206,90 @@ pub struct UnexpectedCharacter {
     pub character: char,
 }
 
-type TokenizerFn = fn(source: &Vec<char>, current_position: usize) -> usize;
+type TokenizerFn = fn(input: &str) -> usize;
 
 #[derive(Debug)]
 pub struct TerminalSymbol {
-    judgement: Either<TokenizerFn, Vec<char>>,
+    tokenizer: Tokenizer,
     symbol_id: u32,
+}
+
+#[derive(Debug)]
+pub enum Tokenizer {
+    Keyword(&'static str),
+    Regex(Regex),
+    Functional(TokenizerFn),
 }
 
 impl TerminalSymbol {
     pub fn new_from_tokenizer_fn(tokenizer: TokenizerFn, symbol_id: u32) -> Self {
-        return Self {
-            judgement: Either::Left(tokenizer),
+        Self {
+            tokenizer: Tokenizer::Functional(tokenizer),
             symbol_id,
-        };
+        }
     }
 
-    pub fn new_from_string(judge_str: &str, symbol_id: u32) -> Self {
-        return Self {
-            judgement: Either::Right(judge_str.chars().collect::<Vec<char>>()),
+    pub fn new_from_string(keyword: &'static str, symbol_id: u32) -> Self {
+        Self {
+            tokenizer: Tokenizer::Keyword(keyword),
             symbol_id,
-        };
+        }
     }
 
-    pub fn tokenize(&self, source: &Vec<char>, current_position: usize) -> usize {
-        return match &self.judgement {
-            Either::Left(tokenizer_fn) => tokenizer_fn(source, current_position),
-            Either::Right(string) => {
-                for i in 0..string.len() {
-                    let current_char = match source.get(current_position + i) {
-                        Some(ch) => ch.clone(),
+    pub fn new_from_regex(regex: &str, symbol_id: u32) -> Self {
+        Self {
+            tokenizer: Tokenizer::Regex(Regex::new(format!("^{}", regex).as_str()).unwrap()),
+            symbol_id,
+        }
+    }
+
+    pub fn tokenize(&self, input: &str) -> usize {
+        return match &self.tokenizer {
+            Tokenizer::Functional(tokenizer_fn) => tokenizer_fn(input),
+            Tokenizer::Keyword(keyword) => {
+                let mut input_chars = input.chars();
+                let mut keyword_chars = keyword.chars();
+                let mut current_byte_length = 0;
+
+                loop {
+                    let keyword_char = match keyword_chars.next() {
+                        Some(c) => c,
+                        _ => break current_byte_length,
+                    };
+                    let current_char = match input_chars.next() {
+                        Some(c) => c,
                         _ => return 0, // reject
                     };
-                    if current_char != string[i] {
+                    if current_char != keyword_char {
                         return 0; // reject
                     }
+
+                    current_byte_length += current_char.len_utf8();
                 }
-                string.len() // accept
+            }
+            Tokenizer::Regex(regex) => {
+                match regex.find(input) {
+                    Some(matched) => matched.end(),
+                    None => 0, // reject
+                }
             }
         };
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Token {
+pub struct Token<'input> {
     pub position: TokenPosition,
-    pub text: String,
+    pub text: &'input str,
     pub terminal_symbol: Rc<TerminalSymbol>,
     pub is_eof: bool,
     pub symbol_id: u32,
 }
 
-impl Token {
+impl<'input> Token<'input> {
     pub fn new(
         position: TokenPosition,
-        text: String,
+        text: &'input str,
         terminal_symbol: Rc<TerminalSymbol>,
         symbol_id: u32,
     ) -> Self {
@@ -290,7 +305,7 @@ impl Token {
     pub fn new_eof(position: TokenPosition, terminal_symbol: Rc<TerminalSymbol>) -> Self {
         return Self {
             position,
-            text: String::new(),
+            text: "",
             terminal_symbol,
             is_eof: true,
             symbol_id: 0,

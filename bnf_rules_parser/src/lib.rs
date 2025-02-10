@@ -321,8 +321,9 @@ fn parse_rule(
                         ))
                     }
                 };
+
                 if literal.to_string().starts_with("r") {
-                    pattern.push(BNFSymbol::TerminalSymbolFunction(string));
+                    pattern.push(BNFSymbol::TerminalSymbolRegex(string));
                 } else {
                     pattern.push(BNFSymbol::TerminalSymbolString(string));
                 }
@@ -399,6 +400,7 @@ impl BNFRule {
 pub enum BNFSymbol {
     NonTerminalSymbolName(String),
     TerminalSymbolString(String),
+    TerminalSymbolRegex(String),
     TerminalSymbolFunction(String),
     Null,
     EOF,
@@ -417,6 +419,7 @@ impl BNFSymbol {
             BNFSymbol::TerminalSymbolFunction(name) => name.as_str(),
             BNFSymbol::NonTerminalSymbolName(name) => name.as_str(),
             BNFSymbol::TerminalSymbolString(name) => name.as_str(),
+            BNFSymbol::TerminalSymbolRegex(name) => name.as_str(),
             BNFSymbol::Null => "Null",
             BNFSymbol::EOF => "EOF",
         };
@@ -622,14 +625,9 @@ impl ParserGenerator {
                                     break;
                                 }
                             }
-                            BNFSymbol::TerminalSymbolString(_) => {
-                                if !first_set.contains(symbol) {
-                                    first_set_add.insert(symbol.clone());
-                                    retry = true;
-                                }
-                                break;
-                            }
-                            BNFSymbol::TerminalSymbolFunction(_) => {
+                            BNFSymbol::TerminalSymbolString(_)
+                            | BNFSymbol::TerminalSymbolFunction(_)
+                            | BNFSymbol::TerminalSymbolRegex(_) => {
                                 if !first_set.contains(symbol) {
                                     first_set_add.insert(symbol.clone());
                                     retry = true;
@@ -820,6 +818,13 @@ impl ParserGenerator {
                             Operation::Shift(next_group_number),
                         )?;
                     }
+                    BNFSymbol::TerminalSymbolRegex(_) => {
+                        self.insert_opreration(
+                            &mut operation_map,
+                            symbol,
+                            Operation::Shift(next_group_number),
+                        )?;
+                    }
                     BNFSymbol::TerminalSymbolFunction(_) => {
                         self.insert_opreration(
                             &mut operation_map,
@@ -958,6 +963,13 @@ impl ParserGenerator {
                     code += format!(
                         "TerminalSymbol::new_from_string(\"{}\", {}),",
                         string, symbol_id
+                    )
+                    .as_str();
+                }
+                BNFSymbol::TerminalSymbolRegex(regex) => {
+                    code += format!(
+                        "TerminalSymbol::new_from_regex(r\"{}\", {}),",
+                        regex, symbol_id
                     )
                     .as_str();
                 }
@@ -1273,4 +1285,3 @@ impl Operation {
         };
     }
 }
-
