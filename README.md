@@ -28,7 +28,7 @@ pub fn parse() {
 
 ### Usage
 ```toml
-bnf_rules = "0.1.5"
+bnf_rules = "0.1.6"
 ```
 
 ### Extended BNF
