@@ -961,14 +961,14 @@ impl ParserGenerator {
             match symbol {
                 BNFSymbol::TerminalSymbolString(string) => {
                     code += format!(
-                        "TerminalSymbol::new_from_string(\"{}\", {}),",
+                        "TerminalSymbol::new_from_string(r##########\"{}\"##########, {}),",
                         string, symbol_id
                     )
                     .as_str();
                 }
                 BNFSymbol::TerminalSymbolRegex(regex) => {
                     code += format!(
-                        "TerminalSymbol::new_from_regex(r\"{}\", {}),",
+                        "TerminalSymbol::new_from_regex(r##########\"{}\"##########, {}),",
                         regex, symbol_id
                     )
                     .as_str();
@@ -1056,7 +1056,10 @@ impl ParserGenerator {
 
                 let first_set = self.get_first_set(&latter_pattern, &item.first_set);
 
-                let rule = self.rule_map.get(&next_symbol_name).unwrap();
+                let rule = self
+                    .rule_map
+                    .get(&next_symbol_name)
+                    .unwrap_or_else(|| panic!("No symbol found : '{}'", &next_symbol_name));
 
                 for pattern in rule.or_patterns.iter() {
                     let mut found = false;
