@@ -238,7 +238,7 @@ impl TerminalSymbol {
 
     pub fn new_from_regex(regex: &str, symbol_id: u32) -> Self {
         Self {
-            tokenizer: Tokenizer::Regex(Regex::new(format!("^{}", regex).as_str()).unwrap()),
+            tokenizer: Tokenizer::Regex(Regex::new(format!("^({})", regex).as_str()).unwrap()),
             symbol_id,
         }
     }
