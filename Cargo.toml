@@ -1,6 +1,6 @@
 [package]
 name = "bnf_rules"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 repository = "https://github.com/bea4dev/bnf_rules"
 description = "LR(1) parser generator"
@@ -13,6 +13,6 @@ members = [
 ]
 
 [dependencies]
-bnf_rules_parser = { path = "./bnf_rules_parser", version = "0.1.6" }
-bnf_rules_macro = { path = "./bnf_rules_macro", version = "0.1.6" }
+bnf_rules_parser = { path = "./bnf_rules_parser", version = "0.1.7" }
+bnf_rules_macro = { path = "./bnf_rules_macro", version = "0.1.7" }
 regex = "^1.7.1"
